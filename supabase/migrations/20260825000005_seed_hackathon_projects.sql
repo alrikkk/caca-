@@ -2,6 +2,31 @@
 -- Caca: Hackathon Seed Projects & UUID Mapping
 -- ==============================================================================
 
+-- 0. Insert placeholder system user into auth.users to satisfy FK constraint public.profiles_id_fkey
+INSERT INTO auth.users (
+    id,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    created_at,
+    updated_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    aud,
+    role
+) VALUES (
+    '00000000-0000-0000-0000-000000000000',
+    'lead@caca.hackathon',
+    '$2a$10$placeholderencryptedpasswordforseedsystemaccount123456789',
+    NOW(),
+    NOW(),
+    NOW(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{"full_name":"Project Lead"}'::jsonb,
+    'authenticated',
+    'authenticated'
+) ON CONFLICT (id) DO NOTHING;
+
 -- 1. Insert placeholder system creator profile if not exists
 INSERT INTO public.profiles (
     id,
@@ -98,7 +123,7 @@ INSERT INTO public.projects (
     'Fintech & Smart Contracts',
     'recruiting',
     3,
-    6,
+    8,
     12,
     'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&auto=format&fit=crop&q=80'
 )
