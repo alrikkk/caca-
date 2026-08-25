@@ -1,14 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { UserPlus, ArrowRight } from "lucide-react";
 
 export default function UnifiedAuthPage() {
-  const router = useRouter();
   const { signIn, signUp, enterDemoMode } = useAuth();
 
   const [identifier, setIdentifier] = useState("");
@@ -35,9 +33,9 @@ export default function UnifiedAuthPage() {
           setError(res.error);
           setLoading(false);
         } else if (res.hasProfile) {
-          router.push("/feed");
+          window.location.href = "/feed";
         } else {
-          router.push("/onboarding");
+          window.location.href = "/onboarding";
         }
       } catch (err: any) {
         setError(err?.message || "Account creation failed.");
@@ -62,9 +60,9 @@ export default function UnifiedAuthPage() {
         }
 
         if (res.hasProfile === false) {
-          router.push("/onboarding");
+          window.location.href = "/onboarding";
         } else {
-          router.push("/feed");
+          window.location.href = "/feed";
         }
       } catch (err: any) {
         setError(err?.message || "Authentication failed. Please check credentials.");
@@ -85,9 +83,9 @@ export default function UnifiedAuthPage() {
         setError(res.error);
         setLoading(false);
       } else if (res.hasProfile) {
-        router.push("/feed");
+        window.location.href = "/feed";
       } else {
-        router.push("/onboarding");
+        window.location.href = "/onboarding";
       }
     } catch (err: any) {
       setError(err?.message || "Failed to create account.");
@@ -97,7 +95,7 @@ export default function UnifiedAuthPage() {
 
   const handleDemo = () => {
     enterDemoMode();
-    router.push("/feed");
+    window.location.href = "/feed";
   };
 
   return (
