@@ -35,10 +35,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (user) {
       const p = await ProfileService.getCurrentProfile(user.id);
-      setProfileState(p);
+      if (p) {
+        setProfileState(p);
+      } else {
+        // Fallback for authenticated user without completed profile
+        setProfileState({
+          id: user.id,
+          email: user.email || "",
+          fullName: user.email?.split("@")[0] || "Student",
+          college: "Unassigned College",
+          major: "General",
+          gradYear: 2027,
+          experienceLevel: "sophomore",
+          workingStyle: "collaborative",
+          skills: [],
+          interests: [],
+          availability: {
+            hoursPerWeek: 10,
+            timezone: "UTC",
+            prefersRemote: true,
+            weekendAvailability: true,
+            weekdayEvenings: true,
+          },
+        });
+      }
     } else {
       const p = await ProfileService.getCurrentProfile();
-      setProfileState(p);
+      if (p) setProfileState(p);
     }
   };
 
@@ -48,11 +71,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const isDemo =
           typeof window !== "undefined" &&
-          (localStorage.getItem("caca_is_demo_mode") === "true" ||
-            document.cookie.includes("caca_demo_session=true"));
+          localStorage.getItem("caca_is_demo_mode") === "true" &&
+          document.cookie.includes("caca_demo_mode=true");
 
         if (isDemo) {
           setIsDemoMode(true);
+          setUser(null);
           setProfileState(CURRENT_USER);
           setIsLoading(false);
           return;
@@ -60,28 +84,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (isSupabaseConfigured()) {
           const supabase = createClient();
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            setUser(session.user);
-            const p = await ProfileService.getCurrentProfile(session.user.id);
-            setProfileState(p);
+          const { data: { user: authUser }, error: userError } = await supabase.auth.getUser();
+
+          if (authUser && !userError) {
+            setUser(authUser);
+            setIsDemoMode(false);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("caca_is_demo_mode", "false");
+              document.cookie = "caca_demo_mode=; path=/; max-age=0";
+              document.cookie = "caca_demo_session=; path=/; max-age=0";
+            }
+
+            const p = await ProfileService.getCurrentProfile(authUser.id);
+            if (p) {
+              setProfileState(p);
+            } else {
+              setProfileState({
+                id: authUser.id,
+                email: authUser.email || "",
+                fullName: authUser.email?.split("@")[0] || "Student",
+                college: "Unassigned College",
+                major: "General",
+                gradYear: 2027,
+                experienceLevel: "sophomore",
+                workingStyle: "collaborative",
+                skills: [],
+                interests: [],
+                availability: {
+                  hoursPerWeek: 10,
+                  timezone: "UTC",
+                  prefersRemote: true,
+                  weekendAvailability: true,
+                  weekdayEvenings: true,
+                },
+              });
+            }
           } else {
-            const p = await ProfileService.getCurrentProfile();
-            if (p) setProfileState(p);
+            // No live Supabase user
+            setUser(null);
+            setProfileState(null);
           }
         } else {
-          // Standalone mode: load saved local profile session if present
-          const p = await ProfileService.getCurrentProfile();
-          if (p) {
+          // Standalone local offline fallback
+          const localProfile = await ProfileService.getCurrentProfile();
+          if (localProfile) {
             setUser({
-              id: p.id,
+              id: localProfile.id,
               app_metadata: {},
               user_metadata: {},
               aud: "authenticated",
               created_at: new Date().toISOString(),
-              email: p.email,
+              email: localProfile.email,
             });
-            setProfileState(p);
+            setProfileState(localProfile);
           }
         }
       } catch (err) {
@@ -96,18 +151,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured()) {
       const supabase = createClient();
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session?.user) {
-          setUser(session.user);
-          setIsDemoMode(false);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("caca_is_demo_mode", "false");
-            document.cookie = "caca_demo_session=true; path=/; max-age=86400";
-          }
-          try {
-            const p = await ProfileService.getCurrentProfile(session.user.id);
-            setProfileState(p);
-          } catch {
-            // Ignored
+        if (event === "SIGNED_IN" || (session?.user && event !== "SIGNED_OUT")) {
+          const authUser = session?.user;
+          if (authUser) {
+            setUser(authUser);
+            setIsDemoMode(false);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("caca_is_demo_mode", "false");
+              document.cookie = "caca_demo_mode=; path=/; max-age=0";
+              document.cookie = "caca_demo_session=; path=/; max-age=0";
+            }
+            try {
+              const p = await ProfileService.getCurrentProfile(authUser.id);
+              if (p) {
+                setProfileState(p);
+              } else {
+                setProfileState({
+                  id: authUser.id,
+                  email: authUser.email || "",
+                  fullName: authUser.email?.split("@")[0] || "Student",
+                  college: "Unassigned College",
+                  major: "General",
+                  gradYear: 2027,
+                  experienceLevel: "sophomore",
+                  workingStyle: "collaborative",
+                  skills: [],
+                  interests: [],
+                  availability: {
+                    hoursPerWeek: 10,
+                    timezone: "UTC",
+                    prefersRemote: true,
+                    weekendAvailability: true,
+                    weekdayEvenings: true,
+                  },
+                });
+              }
+            } catch {
+              // Handled
+            }
           }
         } else if (event === "SIGNED_OUT") {
           setUser(null);
@@ -116,6 +197,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (typeof window !== "undefined") {
             localStorage.removeItem("caca_active_profile");
             localStorage.removeItem("caca_is_demo_mode");
+            localStorage.removeItem("caca_applications");
+            document.cookie = "caca_demo_mode=; path=/; max-age=0";
             document.cookie = "caca_demo_session=; path=/; max-age=0";
           }
         }
@@ -144,11 +227,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         loggedInUser = data.user;
         setUser(loggedInUser);
+        setIsDemoMode(false);
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem("caca_is_demo_mode", "false");
+          document.cookie = "caca_demo_mode=; path=/; max-age=0";
+          document.cookie = "caca_demo_session=; path=/; max-age=0";
+        }
 
         try {
           const p = await ProfileService.getCurrentProfile(loggedInUser?.id);
-          setProfileState(p);
-          hasProfile = Boolean(p);
+          if (p) {
+            setProfileState(p);
+            hasProfile = true;
+          } else {
+            setProfileState({
+              id: loggedInUser.id,
+              email: loggedInUser.email || email,
+              fullName: loggedInUser.email?.split("@")[0] || "Student",
+              college: "Unassigned College",
+              major: "General",
+              gradYear: 2027,
+              experienceLevel: "sophomore",
+              workingStyle: "collaborative",
+              skills: [],
+              interests: [],
+              availability: {
+                hoursPerWeek: 10,
+                timezone: "UTC",
+                prefersRemote: true,
+                weekendAvailability: true,
+                weekdayEvenings: true,
+              },
+            });
+            hasProfile = false;
+          }
         } catch {
           hasProfile = false;
         }
@@ -171,10 +284,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       setIsDemoMode(false);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("caca_is_demo_mode", "false");
-        document.cookie = "caca_demo_session=true; path=/; max-age=86400";
-      }
       return { hasProfile };
     } catch (err: any) {
       return { error: err?.message || "Failed to log in" };
@@ -212,7 +321,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsDemoMode(false);
       if (typeof window !== "undefined") {
         localStorage.setItem("caca_is_demo_mode", "false");
-        document.cookie = "caca_demo_session=true; path=/; max-age=86400";
+        document.cookie = "caca_demo_mode=; path=/; max-age=0";
+        document.cookie = "caca_demo_session=; path=/; max-age=0";
       }
       return {};
     } catch (err: any) {
@@ -239,6 +349,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem("caca_active_profile");
         localStorage.removeItem("caca_is_demo_mode");
         localStorage.removeItem("caca_applications");
+        document.cookie = "caca_demo_mode=; path=/; max-age=0";
         document.cookie = "caca_demo_session=; path=/; max-age=0";
       }
       setIsLoading(false);
@@ -247,10 +358,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const enterDemoMode = () => {
     setIsDemoMode(true);
+    setUser(null);
     setProfileState(CURRENT_USER);
     if (typeof window !== "undefined") {
       localStorage.setItem("caca_is_demo_mode", "true");
-      document.cookie = "caca_demo_session=true; path=/; max-age=86400";
+      document.cookie = "caca_demo_mode=true; path=/; max-age=86400";
     }
   };
 

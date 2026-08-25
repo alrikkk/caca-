@@ -27,7 +27,9 @@ export class ProfileService {
    */
   static async getCurrentProfile(userId?: string): Promise<StudentProfile | null> {
     if (typeof window !== "undefined") {
-      const isDemo = localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true";
+      const isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
       if (isDemo) return CURRENT_USER;
     }
 
@@ -351,7 +353,8 @@ export class ProfileService {
     if (typeof window !== "undefined") {
       localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(newProfile));
       localStorage.setItem(LOCAL_STORAGE_DEMO_KEY, "false");
-      document.cookie = "caca_demo_session=true; path=/; max-age=86400";
+      document.cookie = "caca_demo_mode=; path=/; max-age=0";
+      document.cookie = "caca_demo_session=; path=/; max-age=0";
     }
 
     return newProfile;

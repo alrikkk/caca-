@@ -55,7 +55,9 @@ export async function middleware(request: NextRequest) {
   }
 
   const hasDemoCookie =
+    request.cookies.get("caca_demo_mode")?.value === "true" ||
     request.cookies.get("caca_demo_session")?.value === "true";
+
   const isAuthenticated = hasSupabaseSession || hasDemoCookie;
 
   const isAuthRoute =

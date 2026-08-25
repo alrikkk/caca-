@@ -5,21 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth-context";
 import { LogOut } from "lucide-react";
 
 export const Navbar: React.FC = () => {
   const router = useRouter();
-  const { profile, isDemoMode, signOut } = useAuth();
+  const { profile, user, isDemoMode, isLoading, signOut } = useAuth();
 
   const handleLogout = async () => {
     await signOut();
     router.push("/login");
   };
 
-  const displayName = profile?.fullName || "Guest Student";
-  const college = profile?.college || "Unassigned College";
+  const displayName = isDemoMode
+    ? profile?.fullName || "Alex Chen"
+    : user
+    ? profile?.fullName || user.email?.split("@")[0] || "Student"
+    : isLoading
+    ? "..."
+    : "Guest";
 
   return (
     <header className="sticky top-0 z-40 w-full bg-white border-b-2 border-ink h-16 flex items-center justify-between px-4 sm:px-8">
