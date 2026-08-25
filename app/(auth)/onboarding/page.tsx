@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { ProfileService, OnboardingData } from "@/services/profile-service";
@@ -8,11 +8,13 @@ import { ExperienceLevel, WorkingStyle } from "@/types/user";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import { Plus, Trash2, ArrowRight } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
+import { Plus, Trash2, ArrowRight, Camera, Upload, X } from "lucide-react";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { user, setProfile } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState("");
   const [college, setCollege] = useState("");
@@ -21,6 +23,8 @@ export default function OnboardingPage() {
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("sophomore");
   const [workingStyle, setWorkingStyle] = useState<WorkingStyle>("collaborative");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [linkedinUrl, setLinkedinUrl] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
   const [portfolioUrl, setPortfolioUrl] = useState("");
   const [hoursPerWeek, setHoursPerWeek] = useState(12);
@@ -33,6 +37,25 @@ export default function OnboardingPage() {
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillProf, setNewSkillProf] = useState(4);
   const [loading, setLoading] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAvatar(true);
+    try {
+      const tempId = user?.id || `usr_${Date.now()}`;
+      const res = await ProfileService.uploadAvatar(tempId, file);
+      if (res.url) {
+        setAvatarUrl(res.url);
+      }
+    } catch {
+      // Ignored
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleAddSkill = () => {
     if (!newSkillName.trim()) return;
@@ -64,6 +87,8 @@ export default function OnboardingPage() {
         experienceLevel,
         workingStyle,
         bio: bio.trim() || undefined,
+        avatarUrl: avatarUrl || undefined,
+        linkedinUrl: linkedinUrl.trim() || undefined,
         githubUrl: githubUrl.trim() || undefined,
         portfolioUrl: portfolioUrl.trim() || undefined,
         hoursPerWeek: Number(hoursPerWeek),
@@ -98,6 +123,43 @@ export default function OnboardingPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs">
+          {/* Avatar Upload in Onboarding */}
+          <div className="flex items-center gap-4 p-3 bg-canvas-subtle border-hard">
+            <Avatar name={fullName || "Student"} src={avatarUrl} size="md" />
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingAvatar}
+                  className="px-2.5 py-1 border-hard bg-white hover:bg-ink hover:text-white font-mono text-[11px] font-bold uppercase transition-colors"
+                >
+                  {uploadingAvatar ? "UPLOADING..." : "UPLOAD PHOTO"}
+                </button>
+                {avatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setAvatarUrl(undefined)}
+                    className="p-1 text-ink-muted hover:text-red-600"
+                    title="Remove avatar"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-ink-muted uppercase">
+                OPTIONAL • JPG, PNG, WEBP (MAX 5MB)
+              </p>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               label="FULL NAME"
@@ -182,15 +244,21 @@ export default function OnboardingPage() {
           </div>
 
           {/* Social Links (Optional) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Input
-              label="GITHUB URL (OPTIONAL)"
+              label="LINKEDIN"
+              placeholder="https://linkedin.com/in/..."
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+            />
+            <Input
+              label="GITHUB"
               placeholder="https://github.com/..."
               value={githubUrl}
               onChange={(e) => setGithubUrl(e.target.value)}
             />
             <Input
-              label="PORTFOLIO URL (OPTIONAL)"
+              label="PORTFOLIO"
               placeholder="https://..."
               value={portfolioUrl}
               onChange={(e) => setPortfolioUrl(e.target.value)}

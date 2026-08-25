@@ -13,8 +13,10 @@ export interface OnboardingData {
   experienceLevel: ExperienceLevel;
   workingStyle: WorkingStyle;
   bio?: string;
+  avatarUrl?: string;
   githubUrl?: string;
   portfolioUrl?: string;
+  linkedinUrl?: string;
   hoursPerWeek: number;
   skills: { name: string; category: string; proficiency: number }[];
 }
@@ -152,8 +154,10 @@ export class ProfileService {
       experienceLevel: data.experienceLevel,
       workingStyle: data.workingStyle,
       bio: data.bio || undefined,
+      avatarUrl: data.avatarUrl || undefined,
       githubUrl: data.githubUrl || undefined,
       portfolioUrl: data.portfolioUrl || undefined,
+      linkedinUrl: data.linkedinUrl || undefined,
       skills: data.skills.map((s, idx) => ({
         id: `sk_onboard_${idx}`,
         name: s.name,
@@ -185,8 +189,10 @@ export class ProfileService {
           experience_level: data.experienceLevel,
           working_style: data.workingStyle,
           bio: data.bio || null,
+          avatar_url: data.avatarUrl || null,
           github_url: data.githubUrl || null,
           portfolio_url: data.portfolioUrl || null,
+          linkedin_url: data.linkedinUrl || null,
         });
 
         await supabase.from("availability").upsert({
@@ -225,9 +231,11 @@ export class ProfileService {
         await supabase.from("profiles").update({
           full_name: profile.fullName,
           bio: profile.bio || null,
+          avatar_url: profile.avatarUrl || null,
           working_style: profile.workingStyle,
           github_url: profile.githubUrl || null,
           portfolio_url: profile.portfolioUrl || null,
+          linkedin_url: profile.linkedinUrl || null,
         }).eq("id", profile.id);
 
         await supabase.from("availability").update({
@@ -237,5 +245,63 @@ export class ProfileService {
         // Fallback
       }
     }
+  }
+
+  /**
+   * Uploads an avatar image to Supabase Storage (with local base64 fallback)
+   */
+  static async uploadAvatar(
+    userId: string,
+    file: File
+  ): Promise<{ url?: string; error?: string }> {
+    if (!file.type.startsWith("image/")) {
+      return { error: "File must be an image (JPEG, PNG, WEBP, GIF)" };
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      return { error: "Image size must be less than 5MB" };
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const fileExt = file.name.split(".").pop() || "png";
+        const filePath = `${userId}/avatar_${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(filePath, file, {
+            upsert: true,
+            contentType: file.type,
+          });
+
+        if (uploadError) {
+          console.warn("Supabase storage upload error:", uploadError.message);
+          // Fall back to local data URL if bucket is not created yet
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve({ url: reader.result as string });
+            reader.onerror = () => resolve({ error: "Failed to read image" });
+            reader.readAsDataURL(file);
+          });
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(filePath);
+
+        return { url: publicUrl };
+      } catch (err: any) {
+        console.warn("Storage exception, falling back to local:", err?.message);
+      }
+    }
+
+    // Local base64 data URL fallback
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ url: reader.result as string });
+      reader.onerror = () => resolve({ error: "Failed to read image" });
+      reader.readAsDataURL(file);
+    });
   }
 }

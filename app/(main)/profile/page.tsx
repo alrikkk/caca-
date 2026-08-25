@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { WorkingStyle, UserSkill } from "@/types/user";
+import { ProfileService } from "@/services/profile-service";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -11,36 +12,47 @@ import { Input } from "@/components/ui/Input";
 import {
   Github,
   Globe,
+  Linkedin,
   CheckCircle2,
   Plus,
   Trash2,
   Save,
-  ArrowRight,
+  Camera,
+  Upload,
+  X,
+  AlertCircle,
 } from "lucide-react";
 
 export default function ProfilePage() {
-  const { profile, setProfile, isDemoMode } = useAuth();
+  const { profile, setProfile, isDemoMode, user } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [hoursPerWeek, setHoursPerWeek] = useState(12);
   const [workingStyle, setWorkingStyle] = useState<WorkingStyle>("collaborative");
   const [githubUrl, setGithubUrl] = useState("");
   const [portfolioUrl, setPortfolioUrl] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
   const [skills, setSkills] = useState<UserSkill[]>([]);
 
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillProf, setNewSkillProf] = useState(4);
   const [isSaved, setIsSaved] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.fullName || "");
       setBio(profile.bio || "");
+      setAvatarUrl(profile.avatarUrl);
       setHoursPerWeek(profile.availability?.hoursPerWeek || 10);
       setWorkingStyle(profile.workingStyle || "collaborative");
       setGithubUrl(profile.githubUrl || "");
       setPortfolioUrl(profile.portfolioUrl || "");
+      setLinkedinUrl(profile.linkedinUrl || "");
       setSkills(profile.skills || []);
     }
   }, [profile]);
@@ -62,6 +74,38 @@ export default function ProfilePage() {
       </div>
     );
   }
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadError(null);
+    setIsUploading(true);
+
+    try {
+      const userId = user?.id || profile.id || `usr_${Date.now()}`;
+      const res = await ProfileService.uploadAvatar(userId, file);
+
+      if (res.error) {
+        setUploadError(res.error);
+      } else if (res.url) {
+        setAvatarUrl(res.url);
+        const updated = { ...profile, avatarUrl: res.url };
+        setProfile(updated);
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || "Failed to upload avatar");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarUrl(undefined);
+    const updated = { ...profile, avatarUrl: undefined };
+    setProfile(updated);
+  };
 
   const handleAddSkill = () => {
     if (!newSkillName.trim()) return;
@@ -87,9 +131,11 @@ export default function ProfilePage() {
       ...profile,
       fullName: fullName.trim() || profile.fullName,
       bio: bio.trim() || undefined,
+      avatarUrl: avatarUrl || undefined,
       workingStyle,
       githubUrl: githubUrl.trim() || undefined,
       portfolioUrl: portfolioUrl.trim() || undefined,
+      linkedinUrl: linkedinUrl.trim() || undefined,
       skills,
       availability: {
         ...profile.availability,
@@ -136,15 +182,34 @@ export default function ProfilePage() {
         </Button>
       </div>
 
-      {/* Identity */}
+      {/* Identity & Avatar Section */}
       <div className="bg-white border-hard shadow-hard p-5 space-y-4">
-        <div className="flex items-center gap-4">
-          <Avatar
-            name={fullName || profile.fullName}
-            src={profile.avatarUrl}
-            size="lg"
-          />
-          <div className="space-y-1 flex-1">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="relative group">
+            <Avatar
+              name={fullName || profile.fullName}
+              src={avatarUrl}
+              size="lg"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute -bottom-1 -right-1 p-1 bg-ink text-white hover:bg-caca-coral border-hard transition-colors shadow-hard"
+              title="Upload photo"
+              aria-label="Upload photo"
+            >
+              <Camera className="w-3 h-3" />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarFileChange}
+            />
+          </div>
+
+          <div className="space-y-1 flex-1 w-full">
             <input
               type="text"
               value={fullName}
@@ -158,6 +223,36 @@ export default function ProfilePage() {
               {profile.experienceLevel} • GRAD {profile.gradYear}
             </p>
           </div>
+        </div>
+
+        {/* Compact Avatar Controls */}
+        <div className="flex items-center gap-2 pt-1 border-t border-ink/10 text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-ink text-[11px] font-mono font-bold uppercase transition-colors"
+          >
+            <Upload className="w-3 h-3" />
+            <span>{isUploading ? "UPLOADING..." : "UPLOAD PHOTO"}</span>
+          </button>
+
+          {avatarUrl && (
+            <button
+              type="button"
+              onClick={handleRemoveAvatar}
+              className="inline-flex items-center gap-1 px-2 py-1 text-ink-muted hover:text-red-600 text-[11px] font-mono uppercase"
+            >
+              <X className="w-3 h-3" />
+              <span>REMOVE</span>
+            </button>
+          )}
+
+          {uploadError && (
+            <span className="text-red-600 text-[11px] flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" /> {uploadError}
+            </span>
+          )}
         </div>
 
         {/* Bio */}
@@ -174,34 +269,51 @@ export default function ProfilePage() {
           />
         </div>
 
-        {/* Social / Portfolio Links (Only rendered if present or actively edited) */}
+        {/* Social / Portfolio Links */}
         <div className="space-y-2">
           <label className="text-xs font-mono font-bold uppercase text-ink">
             LINKS
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <Input
-              label="GITHUB URL"
+              label="LINKEDIN"
+              placeholder="https://linkedin.com/in/..."
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+            />
+            <Input
+              label="GITHUB"
               placeholder="https://github.com/..."
               value={githubUrl}
               onChange={(e) => setGithubUrl(e.target.value)}
             />
             <Input
-              label="PORTFOLIO URL"
+              label="PORTFOLIO"
               placeholder="https://..."
               value={portfolioUrl}
               onChange={(e) => setPortfolioUrl(e.target.value)}
             />
           </div>
 
-          {(githubUrl || portfolioUrl) && (
+          {(linkedinUrl || githubUrl || portfolioUrl) && (
             <div className="flex flex-wrap gap-2 pt-1">
-              {githubUrl && (
+              {linkedinUrl && (
                 <a
-                  href={githubUrl}
+                  href={linkedinUrl.startsWith("http") ? linkedinUrl : `https://${linkedinUrl}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
+                >
+                  <Linkedin className="w-3.5 h-3.5 text-[#0A66C2]" />
+                  <span>LINKEDIN</span>
+                </a>
+              )}
+              {githubUrl && (
+                <a
+                  href={githubUrl.startsWith("http") ? githubUrl : `https://${githubUrl}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
                 >
                   <Github className="w-3.5 h-3.5" />
                   <span>GITHUB</span>
@@ -209,10 +321,10 @@ export default function ProfilePage() {
               )}
               {portfolioUrl && (
                 <a
-                  href={portfolioUrl}
+                  href={portfolioUrl.startsWith("http") ? portfolioUrl : `https://${portfolioUrl}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
                 >
                   <Globe className="w-3.5 h-3.5" />
                   <span>PORTFOLIO</span>
