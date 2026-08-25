@@ -1,6 +1,6 @@
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { StudentProfile, UserSkill, Availability, WorkingStyle, ExperienceLevel } from "@/types/user";
-import { CURRENT_USER } from "@/lib/mock-data";
+import { CURRENT_USER, MOCK_STUDENTS } from "@/lib/mock-data";
 
 const LOCAL_STORAGE_PROFILE_KEY = "caca_active_profile";
 const LOCAL_STORAGE_DEMO_KEY = "caca_is_demo_mode";
@@ -23,14 +23,16 @@ export interface OnboardingData {
 
 export class ProfileService {
   /**
-   * Fetches the current user profile from Supabase or active local session
+   * Fetches the current logged in user's profile from Supabase or active local session
    */
   static async getCurrentProfile(userId?: string): Promise<StudentProfile | null> {
+    if (typeof window !== "undefined") {
+      const isDemo = localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true";
+      if (isDemo) return CURRENT_USER;
+    }
+
     if (!userId || !isSupabaseConfigured()) {
       if (typeof window !== "undefined") {
-        const isDemo = localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true";
-        if (isDemo) return CURRENT_USER;
-
         const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
         if (stored) {
           try {
@@ -45,6 +47,7 @@ export class ProfileService {
 
     try {
       const supabase = createClient();
+      // Fast single row query with maybeSingle to never throw on missing profile
       const { data: profileData, error } = await supabase
         .from("profiles")
         .select(`
@@ -68,7 +71,7 @@ export class ProfileService {
           )
         `)
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
       if (error || !profileData) {
         if (typeof window !== "undefined") {
@@ -93,14 +96,24 @@ export class ProfileService {
         category: ui.interests?.category || "general",
       }));
 
-      const avail: Availability = profileData.availability?.[0] || {
-        hoursPerWeek: 10,
-        timezone: "UTC",
-        prefersRemote: true,
-        weekendAvailability: true,
-        weekdayEvenings: true,
-        scheduleWindows: [],
-      };
+      const rawAvail = profileData.availability?.[0];
+      const avail: Availability = rawAvail
+        ? {
+            hoursPerWeek: rawAvail.hours_per_week ?? 10,
+            timezone: rawAvail.timezone ?? "UTC",
+            prefersRemote: Boolean(rawAvail.prefers_remote ?? true),
+            weekendAvailability: Boolean(rawAvail.weekend_availability ?? true),
+            weekdayEvenings: Boolean(rawAvail.weekday_evenings ?? true),
+            scheduleWindows: rawAvail.schedule_windows || [],
+          }
+        : {
+            hoursPerWeek: 10,
+            timezone: "UTC",
+            prefersRemote: true,
+            weekendAvailability: true,
+            weekdayEvenings: true,
+            scheduleWindows: [],
+          };
 
       const mappedProfile: StudentProfile = {
         id: profileData.id,
@@ -134,6 +147,133 @@ export class ProfileService {
       }
       return null;
     }
+  }
+
+  /**
+   * Fetches any student profile by ID (demo student or real Supabase student)
+   */
+  static async getProfileById(userId: string): Promise<StudentProfile | null> {
+    // 1. Check fictional mock students for Demo browsing
+    const mockMatch = MOCK_STUDENTS.find((s) => s.id === userId);
+    if (mockMatch) {
+      return mockMatch;
+    }
+
+    // 2. Check local stored active profile
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed.id === userId) return parsed;
+        } catch {
+          // Ignored
+        }
+      }
+    }
+
+    // 3. Query Supabase profiles table if live
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data: profileData, error } = await supabase
+          .from("profiles")
+          .select(`
+            id,
+            full_name,
+            headline,
+            college,
+            major,
+            grad_year,
+            experience_level,
+            working_style,
+            bio,
+            avatar_url,
+            github_url,
+            portfolio_url,
+            linkedin_url,
+            user_skills (
+              proficiency,
+              years_experience,
+              verified,
+              skills ( id, name, category )
+            ),
+            user_interests (
+              interests ( id, name, category )
+            ),
+            availability (
+              hours_per_week,
+              timezone,
+              prefers_remote,
+              weekend_availability,
+              weekday_evenings,
+              schedule_windows
+            )
+          `)
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (!error && profileData) {
+          const skills: UserSkill[] = (profileData.user_skills || []).map((us: any) => ({
+            id: us.skills?.id || `sk_${Math.random()}`,
+            name: us.skills?.name || "Skill",
+            category: us.skills?.category || "general",
+            proficiency: us.proficiency,
+            yearsExperience: Number(us.years_experience || 0),
+            verified: Boolean(us.verified),
+          }));
+
+          const interests = (profileData.user_interests || []).map((ui: any) => ({
+            id: ui.interests?.id || `int_${Math.random()}`,
+            name: ui.interests?.name || "Interest",
+            category: ui.interests?.category || "general",
+          }));
+
+          const rawAvail = profileData.availability?.[0];
+          const avail: Availability = rawAvail
+            ? {
+                hoursPerWeek: rawAvail.hours_per_week ?? 10,
+                timezone: rawAvail.timezone ?? "UTC",
+                prefersRemote: Boolean(rawAvail.prefers_remote ?? true),
+                weekendAvailability: Boolean(rawAvail.weekend_availability ?? true),
+                weekdayEvenings: Boolean(rawAvail.weekday_evenings ?? true),
+                scheduleWindows: rawAvail.schedule_windows || [],
+              }
+            : {
+                hoursPerWeek: 10,
+                timezone: "UTC",
+                prefersRemote: true,
+                weekendAvailability: true,
+                weekdayEvenings: true,
+                scheduleWindows: [],
+              };
+
+          return {
+            id: profileData.id,
+            email: "", // Never expose email in public profile lookup
+            fullName: profileData.full_name,
+            headline: profileData.headline,
+            college: profileData.college,
+            major: profileData.major,
+            gradYear: profileData.grad_year,
+            experienceLevel: profileData.experience_level,
+            workingStyle: profileData.working_style || "collaborative",
+            bio: profileData.bio || undefined,
+            avatarUrl: profileData.avatar_url || undefined,
+            githubUrl: profileData.github_url || undefined,
+            portfolioUrl: profileData.portfolio_url || undefined,
+            linkedinUrl: profileData.linkedin_url || undefined,
+            skills,
+            interests,
+            availability: avail,
+          };
+        }
+      } catch {
+        // Fallback to null
+      }
+    }
+
+    return null;
   }
 
   /**

@@ -21,12 +21,22 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const res = await signIn(email, password);
-    if (res.error) {
-      setError(res.error);
+    try {
+      const res = await signIn(email, password);
+      if (res.error) {
+        setError(res.error);
+        setLoading(false);
+        return;
+      }
+
+      if (res.hasProfile === false) {
+        router.push("/onboarding");
+      } else {
+        router.push("/feed");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to log in. Please check credentials.");
       setLoading(false);
-    } else {
-      router.push("/feed");
     }
   };
 

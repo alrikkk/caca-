@@ -64,6 +64,7 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
   };
 
   const matchScore = project.matchScore ?? 80;
+  const ownerId = project.owner?.id || project.ownerId;
 
   return (
     <>
@@ -75,16 +76,19 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
       >
         {/* Header */}
         <div className="bg-canvas-subtle border-b-2 border-ink px-4 py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <Link
+            href={`/profile/${ownerId}`}
+            className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+          >
             <Avatar
               name={project.owner?.fullName || "Lead"}
               src={project.owner?.avatarUrl}
               size="sm"
             />
-            <span className="font-mono text-xs font-bold uppercase text-ink">
+            <span className="font-mono text-xs font-bold uppercase text-ink hover:underline">
               {project.owner?.fullName} • {project.owner?.college}
             </span>
-          </div>
+          </Link>
 
           <div className="flex items-center gap-2">
             <Badge variant="dark" size="sm">

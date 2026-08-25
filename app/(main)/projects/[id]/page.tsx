@@ -73,6 +73,8 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const ownerId = project.owner?.id || project.ownerId;
+
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       <div>
@@ -143,21 +145,24 @@ export default function ProjectDetailPage() {
 
           {/* Owner & Action */}
           <div className="flex items-center justify-between pt-2">
-            <div className="flex items-center gap-2.5">
+            <Link
+              href={`/profile/${ownerId}`}
+              className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+            >
               <Avatar
                 name={project.owner?.fullName || "Lead"}
                 src={project.owner?.avatarUrl}
                 size="sm"
               />
               <div className="text-xs font-mono">
-                <p className="font-bold uppercase text-ink">
+                <p className="font-bold uppercase text-ink hover:underline">
                   {project.owner?.fullName}
                 </p>
                 <p className="text-[10px] text-ink-muted">
                   {project.owner?.college}
                 </p>
               </div>
-            </div>
+            </Link>
 
             <Button
               variant={isApplied ? "accent" : "primary"}
@@ -214,11 +219,17 @@ export default function ProjectDetailPage() {
               </div>
 
               {slot.assignedMember ? (
-                <Avatar
-                  name={slot.assignedMember.fullName}
-                  src={slot.assignedMember.avatarUrl}
-                  size="sm"
-                />
+                <Link
+                  href={`/profile/${slot.assignedMember.id}`}
+                  className="hover:opacity-80 transition-opacity"
+                  title={`View ${slot.assignedMember.fullName}'s profile`}
+                >
+                  <Avatar
+                    name={slot.assignedMember.fullName}
+                    src={slot.assignedMember.avatarUrl}
+                    size="sm"
+                  />
+                </Link>
               ) : (
                 <Badge variant="coral" size="sm">
                   OPEN

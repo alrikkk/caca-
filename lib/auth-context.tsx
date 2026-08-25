@@ -12,7 +12,7 @@ interface AuthContextType {
   profile: StudentProfile | null;
   isDemoMode: boolean;
   isLoading: boolean;
-  signIn: (email: string, pass: string) => Promise<{ error?: string }>;
+  signIn: (email: string, pass: string) => Promise<{ error?: string; hasProfile?: boolean }>;
   signUp: (email: string, pass: string) => Promise<{ data?: any; error?: string }>;
   signOut: () => Promise<void>;
   enterDemoMode: () => void;
@@ -101,10 +101,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsDemoMode(false);
           if (typeof window !== "undefined") {
             localStorage.setItem("caca_is_demo_mode", "false");
-            document.cookie = "caca_demo_session=; path=/; max-age=0";
+            document.cookie = "caca_demo_session=true; path=/; max-age=86400";
           }
-          const p = await ProfileService.getCurrentProfile(session.user.id);
-          setProfileState(p);
+          try {
+            const p = await ProfileService.getCurrentProfile(session.user.id);
+            setProfileState(p);
+          } catch {
+            // Ignored
+          }
         } else if (event === "SIGNED_OUT") {
           setUser(null);
           setProfileState(null);
@@ -126,6 +130,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async (email: string, pass: string) => {
     setIsLoading(true);
     try {
+      let loggedInUser: User | null = null;
+      let hasProfile = false;
+
       if (isSupabaseConfigured()) {
         const supabase = createClient();
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -135,9 +142,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) {
           return { error: error.message };
         }
-        setUser(data.user);
-        const p = await ProfileService.getCurrentProfile(data.user?.id);
-        setProfileState(p);
+        loggedInUser = data.user;
+        setUser(loggedInUser);
+
+        try {
+          const p = await ProfileService.getCurrentProfile(loggedInUser?.id);
+          setProfileState(p);
+          hasProfile = Boolean(p);
+        } catch {
+          hasProfile = false;
+        }
       } else {
         // Standalone offline account verification
         const localProfile = await ProfileService.getCurrentProfile();
@@ -152,6 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(studentUser);
         if (localProfile) {
           setProfileState(localProfile);
+          hasProfile = true;
         }
       }
 
@@ -160,7 +175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem("caca_is_demo_mode", "false");
         document.cookie = "caca_demo_session=true; path=/; max-age=86400";
       }
-      return {};
+      return { hasProfile };
     } catch (err: any) {
       return { error: err?.message || "Failed to log in" };
     } finally {
