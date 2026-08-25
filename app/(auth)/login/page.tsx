@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { UserPlus, LogIn, ArrowRight } from "lucide-react";
+import { UserPlus, ArrowRight } from "lucide-react";
 
 export default function UnifiedAuthPage() {
   const router = useRouter();
@@ -34,9 +34,8 @@ export default function UnifiedAuthPage() {
         if (res.error) {
           setError(res.error);
           setLoading(false);
-        } else if (res.needsEmailConfirmation) {
-          setError("Supabase email confirmation is active. In Supabase Dashboard -> Authentication -> Providers -> Email, turn off 'Confirm email' for instant hackathon access, or verify your email.");
-          setLoading(false);
+        } else if (res.hasProfile) {
+          router.push("/feed");
         } else {
           router.push("/onboarding");
         }
@@ -50,8 +49,8 @@ export default function UnifiedAuthPage() {
         const res = await signIn(email, password);
         if (res.error) {
           if (
-            res.error.toLowerCase().includes("invalid login credentials") ||
-            res.error.toLowerCase().includes("user not found")
+            res.error.toLowerCase().includes("invalid") ||
+            res.error.toLowerCase().includes("not found")
           ) {
             setAccountNotFound(true);
             setError(null);
@@ -85,9 +84,8 @@ export default function UnifiedAuthPage() {
       if (res.error) {
         setError(res.error);
         setLoading(false);
-      } else if (res.needsEmailConfirmation) {
-        setError("Supabase email confirmation is enabled. Please confirm your email or disable confirmation in Supabase Dashboard.");
-        setLoading(false);
+      } else if (res.hasProfile) {
+        router.push("/feed");
       } else {
         router.push("/onboarding");
       }
