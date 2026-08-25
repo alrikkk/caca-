@@ -494,19 +494,148 @@ export class ProfileService {
   }
 
   /**
-   * Find candidate profiles matching missing role skills
+   * Retrieves all candidate profiles for squad building and ranking, scrubbing private fields
+   */
+  static async getAllCandidates(): Promise<StudentProfile[]> {
+    let isDemo = false;
+    if (typeof window !== "undefined") {
+      isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
+    }
+
+    if (isDemo) {
+      return MOCK_STUDENTS.map((s) => ({
+        ...s,
+        email: "",
+        phoneNumber: undefined,
+      }));
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("profiles")
+          .select(`
+            id,
+            full_name,
+            headline,
+            college,
+            major,
+            grad_year,
+            experience_level,
+            working_style,
+            bio,
+            avatar_url,
+            linkedin_url,
+            github_url,
+            portfolio_url,
+            open_to,
+            availability_status,
+            user_skills (
+              proficiency,
+              skills ( name, category )
+            ),
+            availability (
+              hours_per_week,
+              timezone,
+              prefers_remote,
+              weekend_availability,
+              weekday_evenings
+            )
+          `)
+          .limit(50);
+
+        if (!error && data && data.length > 0) {
+          const typedData = data as any[];
+          return typedData.map((p) => ({
+            id: p.id,
+            email: "",
+            fullName: p.full_name,
+            headline: p.headline || undefined,
+            college: p.college,
+            major: p.major,
+            gradYear: p.grad_year,
+            experienceLevel: p.experience_level,
+            workingStyle: (p.working_style as StudentProfile["workingStyle"]) || "collaborative",
+            bio: p.bio || undefined,
+            avatarUrl: p.avatar_url || undefined,
+            linkedinUrl: p.linkedin_url || undefined,
+            githubUrl: p.github_url || undefined,
+            portfolioUrl: p.portfolio_url || undefined,
+            openTo: p.open_to || ["HACKATHONS", "STARTUPS"],
+            availabilityStatus: (p.availability_status as StudentProfile["availabilityStatus"]) || "AVAILABLE",
+            skills: (p.user_skills || []).map((us: any) => ({
+              id: `sk_${Math.random()}`,
+              name: us.skills?.name || "Skill",
+              category: us.skills?.category || "general",
+              proficiency: us.proficiency,
+              yearsExperience: 1,
+            })),
+            interests: [],
+            availability: {
+              hoursPerWeek: p.availability?.hours_per_week || 10,
+              timezone: p.availability?.timezone || "UTC",
+              prefersRemote: p.availability?.prefers_remote ?? true,
+              weekendAvailability: p.availability?.weekend_availability ?? true,
+              weekdayEvenings: p.availability?.weekday_evenings ?? true,
+            },
+          }));
+        }
+      } catch (err) {
+        console.error("getAllCandidates database error:", err);
+      }
+    }
+
+    return MOCK_STUDENTS.map((s) => ({
+      ...s,
+      email: "",
+      phoneNumber: undefined,
+    }));
+  }
+
+  /**
+   * Find candidate profiles matching missing role skills with ranking
    */
   static async findCandidatesForRole(
     requiredSkills: string[],
     roleTitle?: string
   ): Promise<StudentProfile[]> {
-    if (requiredSkills.length === 0) {
-      return this.searchProfiles(roleTitle || "Engineer");
+    const allCandidates = await this.getAllCandidates();
+    if (requiredSkills.length === 0 && !roleTitle) {
+      return allCandidates;
     }
 
-    const query = requiredSkills[0];
-    const results = await this.searchProfiles(query);
-    return results;
+    const reqLowers = requiredSkills.map((s) => s.toLowerCase());
+    const roleLower = (roleTitle || "").toLowerCase();
+
+    // Score candidates by skill match and role relevance
+    const scored = allCandidates.map((cand) => {
+      let score = 0;
+      const userSkills = cand.skills.map((s) => s.name.toLowerCase());
+
+      requiredSkills.forEach((req) => {
+        const found = cand.skills.find(
+          (s) => s.name.toLowerCase().includes(req.toLowerCase()) || req.toLowerCase().includes(s.name.toLowerCase())
+        );
+        if (found) {
+          score += found.proficiency * 20;
+        }
+      });
+
+      if (roleLower && (cand.headline?.toLowerCase().includes(roleLower) || cand.major.toLowerCase().includes(roleLower))) {
+        score += 30;
+      }
+
+      return { cand, score };
+    });
+
+    // Return scored candidates sorted descending
+    return scored
+      .filter((s) => s.score > 0 || requiredSkills.length === 0)
+      .sort((a, b) => b.score - a.score)
+      .map((s) => s.cand);
   }
 
   /**
@@ -639,8 +768,15 @@ export class ProfileService {
   /**
    * Updates an existing profile and verifies database writes
    */
-  static async updateProfile(profile: StudentProfile): Promise<void> {
-    if (isSupabaseConfigured()) {
+  static async updateProfile(profile: StudentProfile, isDemoMode?: boolean): Promise<void> {
+    let isDemo = Boolean(isDemoMode);
+    if (!isDemo && typeof window !== "undefined") {
+      isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
+    }
+
+    if (isSupabaseConfigured() && !isDemo) {
       const supabase = createClient();
 
       const { error: profileError } = await supabase
@@ -665,7 +801,7 @@ export class ProfileService {
 
       if (profileError) {
         console.error("Supabase profile update failed:", profileError);
-        throw new Error(profileError.message || "Failed to update profile in database");
+        throw new Error("Couldn't save changes right now, please try again.");
       }
 
       const { error: availError } = await supabase.from("availability").upsert({
@@ -721,11 +857,13 @@ export class ProfileService {
   }
 
   /**
-   * Uploads an avatar image to Supabase Storage and immediately persists avatar_url to the profile database
+   * Uploads an avatar image to Supabase Storage and immediately persists avatar_url to the profile database.
+   * In Demo Mode, skips Supabase calls completely and uses local-only FileReader/base64 storage.
    */
   static async uploadAndSaveAvatar(
     userId: string,
-    file: File
+    file: File,
+    isDemoMode?: boolean
   ): Promise<{ url?: string; error?: string }> {
     if (!file.type.startsWith("image/")) {
       return { error: "File must be an image (JPEG, PNG, WEBP, GIF)." };
@@ -735,7 +873,14 @@ export class ProfileService {
       return { error: "Image size must be less than 5MB." };
     }
 
-    if (isSupabaseConfigured()) {
+    let isDemo = Boolean(isDemoMode);
+    if (!isDemo && typeof window !== "undefined") {
+      isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
+    }
+
+    if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
         const fileExt = file.name.split(".").pop()?.toLowerCase() || "png";
@@ -751,7 +896,7 @@ export class ProfileService {
 
         if (uploadError) {
           console.error("Supabase storage upload error:", uploadError);
-          return { error: uploadError.message || "Failed to upload avatar to storage." };
+          return { error: "Couldn't save changes right now, please try again." };
         }
 
         // 2. Obtain permanent public URL
@@ -767,7 +912,7 @@ export class ProfileService {
 
         if (dbError) {
           console.error("Supabase profile avatar update error:", dbError);
-          return { error: dbError.message || "Failed to save avatar reference to profile." };
+          return { error: "Couldn't save changes right now, please try again." };
         }
 
         // 4. Update local storage profile cache if present
@@ -786,13 +931,12 @@ export class ProfileService {
 
         return { url: publicUrl };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         console.error("Storage upload exception:", err);
-        return { error: msg || "An unexpected error occurred while saving the avatar." };
+        return { error: "Couldn't save changes right now, please try again." };
       }
     }
 
-    // Fallback for standalone offline testing only
+    // Fallback for Demo Mode and standalone offline testing
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -821,16 +965,28 @@ export class ProfileService {
    */
   static async uploadAvatar(
     userId: string,
-    file: File
+    file: File,
+    isDemoMode?: boolean
   ): Promise<{ url?: string; error?: string }> {
-    return this.uploadAndSaveAvatar(userId, file);
+    return this.uploadAndSaveAvatar(userId, file, isDemoMode);
   }
 
   /**
-   * Removes the avatar from the database and profile
+   * Removes the avatar from the database and profile.
+   * In Demo Mode, skips Supabase calls and clears local storage.
    */
-  static async removeAvatar(userId: string): Promise<{ success: boolean; error?: string }> {
-    if (isSupabaseConfigured()) {
+  static async removeAvatar(
+    userId: string,
+    isDemoMode?: boolean
+  ): Promise<{ success: boolean; error?: string }> {
+    let isDemo = Boolean(isDemoMode);
+    if (!isDemo && typeof window !== "undefined") {
+      isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
+    }
+
+    if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
         const { error: dbError } = await supabase
@@ -840,12 +996,11 @@ export class ProfileService {
 
         if (dbError) {
           console.error("Failed to remove avatar from database:", dbError);
-          return { success: false, error: dbError.message };
+          return { success: false, error: "Couldn't save changes right now, please try again." };
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         console.error("removeAvatar exception:", err);
-        return { success: false, error: msg };
+        return { success: false, error: "Couldn't save changes right now, please try again." };
       }
     }
 

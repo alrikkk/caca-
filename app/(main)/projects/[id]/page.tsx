@@ -8,20 +8,28 @@ import { ProjectService } from "@/services/project-service";
 import { ApplicationService } from "@/services/application-service";
 import { TeamService } from "@/services/team-service";
 import { useAuth } from "@/lib/auth-context";
-import { MOCK_STUDENTS } from "@/lib/mock-data";
+import { MOCK_STUDENTS, CURRENT_USER } from "@/lib/mock-data";
 import { defaultMatchingEngine } from "@/matching/engine";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { MissingRoleMatcherModal } from "@/components/feed/MissingRoleMatcherModal";
+import { SquadBuilderModal } from "@/components/feed/SquadBuilderModal";
+import { MatchBreakdownModal } from "@/components/feed/MatchBreakdownModal";
 import {
   ArrowLeft,
   Check,
   Plus,
   Users,
   UserPlus,
+  Zap,
+  CheckCircle2,
+  AlertTriangle,
+  BarChart2,
+  Shield,
 } from "lucide-react";
 
 export default function ProjectDetailPage() {
@@ -34,10 +42,12 @@ export default function ProjectDetailPage() {
   const [isApplied, setIsApplied] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Missing role matcher
+  // Modals
   const [isMatcherOpen, setIsMatcherOpen] = useState(false);
   const [selectedMatcherRole, setSelectedMatcherRole] = useState("Squad Member");
   const [selectedRequiredSkills, setSelectedRequiredSkills] = useState<string[]>([]);
+  const [isSquadBuilderOpen, setIsSquadBuilderOpen] = useState(false);
+  const [isMatchBreakdownOpen, setIsMatchBreakdownOpen] = useState(false);
 
   // Team creation modal
   const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
@@ -70,7 +80,9 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const teamResult = defaultMatchingEngine.evaluateTeamComposition(
+  const targetStudent = profile || CURRENT_USER;
+  const matchResult = defaultMatchingEngine.calculateIndividualMatch(targetStudent, project);
+  const teamResult = defaultMatchingEngine.evaluateTeamSynergy(
     MOCK_STUDENTS.slice(0, 3),
     project
   );
@@ -151,10 +163,15 @@ export default function ProjectDetailPage() {
               alt={project.title}
               className="w-full h-full object-cover"
             />
-            <div className="absolute top-3 right-3">
-              <Badge variant="lime" size="md">
-                MATCH {project.matchScore ?? 90}%
-              </Badge>
+            <div className="absolute top-3 right-3 flex gap-2">
+              <button
+                onClick={() => setIsMatchBreakdownOpen(true)}
+                className="cursor-pointer"
+              >
+                <Badge variant="lime" size="md">
+                  MATCH {matchResult.overallScore}%
+                </Badge>
+              </button>
             </div>
           </div>
         )}
@@ -184,20 +201,20 @@ export default function ProjectDetailPage() {
           {/* Metrics */}
           <div className="grid grid-cols-3 gap-2 border-t-2 border-b-2 border-ink py-3 text-center font-mono">
             <div>
-              <p className="text-[10px] text-ink-muted uppercase">TEAM SIZE</p>
+              <p className="text-[10px] text-ink-muted uppercase font-bold">TEAM SIZE</p>
               <p className="text-sm font-black text-ink">{project.maxTeamSize} ROLES</p>
             </div>
             <div>
-              <p className="text-[10px] text-ink-muted uppercase">COMMITMENT</p>
+              <p className="text-[10px] text-ink-muted uppercase font-bold">COMMITMENT</p>
               <p className="text-sm font-black text-ink">{project.hoursPerWeek}H / WK</p>
             </div>
             <div>
-              <p className="text-[10px] text-ink-muted uppercase">DURATION</p>
+              <p className="text-[10px] text-ink-muted uppercase font-bold">DURATION</p>
               <p className="text-sm font-black text-ink">{project.durationWeeks} WEEKS</p>
             </div>
           </div>
 
-          {/* Owner & Action */}
+          {/* Owner & Primary Action Bar */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
             <Link
               href={`/profile/${ownerId}`}
@@ -218,12 +235,22 @@ export default function ProjectDetailPage() {
               </div>
             </Link>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => setIsSquadBuilderOpen(true)}
+                className="bg-caca-yellow/30 hover:bg-caca-yellow/50 text-ink border-hard text-xs flex items-center gap-1.5 shadow-hard-sm"
+              >
+                <Zap className="w-3.5 h-3.5 fill-ink" />
+                <span>BUILD MY SQUAD</span>
+              </Button>
+
               <Button
                 variant="accent"
                 size="md"
                 onClick={() => setIsSquadModalOpen(true)}
-                className="flex-1 sm:flex-initial text-xs flex items-center gap-1.5"
+                className="text-xs flex items-center gap-1.5"
               >
                 <Users className="w-3.5 h-3.5" />
                 <span>CREATE SQUAD</span>
@@ -235,7 +262,7 @@ export default function ProjectDetailPage() {
                 onClick={handleApply}
                 isLoading={loading}
                 disabled={isApplied}
-                className="flex-1 sm:flex-initial"
+                className="text-xs"
               >
                 {isApplied ? (
                   <span className="flex items-center gap-1.5">
@@ -250,17 +277,110 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {/* Roster & Skill Coverage */}
-      <div className="bg-white border-hard shadow-hard p-5 space-y-4">
+      {/* WHY YOU MATCH & MISSING Section */}
+      <div className="bg-white border-hard shadow-hard p-5 space-y-4 font-mono text-xs">
         <div className="flex items-center justify-between border-b-2 border-ink pb-2">
-          <h2 className="text-xs font-mono font-black uppercase text-ink">
-            TEAM ROSTER ({project.slots?.length || 4} SLOTS)
+          <h2 className="font-black uppercase text-ink text-sm flex items-center gap-1.5">
+            <BarChart2 className="w-4 h-4 text-caca-blue" />
+            <span>EXPLAINABLE COMPATIBILITY</span>
           </h2>
-          <Badge variant="lime" size="sm">
-            TEAM COMPATIBILITY: {teamResult.teamScore}%
-          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsMatchBreakdownOpen(true)}
+            className="text-[11px] h-7"
+          >
+            VIEW FULL MATRIX
+          </Button>
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* WHY YOU MATCH */}
+          <div className="p-3 border-hard bg-canvas-subtle space-y-2">
+            <div className="flex items-center gap-1.5 font-bold uppercase text-green-700">
+              <CheckCircle2 className="w-4 h-4 text-green-700" />
+              <span>WHY YOU MATCH</span>
+            </div>
+            <div className="space-y-1.5 text-[11px]">
+              {matchResult.whyYouMatch && matchResult.whyYouMatch.length > 0 ? (
+                matchResult.whyYouMatch.slice(0, 4).map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5">
+                    <span className="text-green-700 font-bold">✓</span>
+                    <div>
+                      <span className="font-bold text-ink">{item.title}</span>
+                      <p className="text-[10px] text-ink-muted leading-tight">{item.detail}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-ink-muted text-[10px]">Review requirements to see overlap</p>
+              )}
+            </div>
+          </div>
+
+          {/* MISSING */}
+          <div className="p-3 border-hard bg-canvas-subtle space-y-2">
+            <div className="flex items-center gap-1.5 font-bold uppercase text-amber-700">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              <span>MISSING / GAPS</span>
+            </div>
+            <div className="space-y-1.5 text-[11px]">
+              {matchResult.missingPoints && matchResult.missingPoints.length > 0 ? (
+                matchResult.missingPoints.slice(0, 3).map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5">
+                    <span className="text-amber-600 font-bold">⚠</span>
+                    <div>
+                      <span className="font-bold text-ink">{item.title}</span>
+                      <p className="text-[10px] text-ink-muted leading-tight">{item.detail}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-ink-muted text-[10px]">All core skill requirements covered</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* TEAM SYNERGY & ROSTER */}
+      <div className="bg-white border-hard shadow-hard p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b-2 border-ink pb-2 gap-2">
+          <div>
+            <h2 className="text-xs font-mono font-black uppercase text-ink">
+              TEAM ROSTER & SYNERGY ({project.slots?.length || 4} ROLES)
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="lime" size="sm">
+              TEAM SYNERGY: {teamResult.teamScore}%
+            </Badge>
+          </div>
+        </div>
+
+        {/* Synergy Component Breakdown */}
+        {teamResult.synergyBreakdown && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[10px]">
+            <div className="p-2 border-hard bg-canvas-subtle">
+              <span className="text-ink-muted uppercase block font-bold">SKILL COVERAGE (50%)</span>
+              <span className="text-sm font-black text-ink">{teamResult.synergyBreakdown.skillCoverage}%</span>
+            </div>
+            <div className="p-2 border-hard bg-canvas-subtle">
+              <span className="text-ink-muted uppercase block font-bold">ROLE DIVERSITY (20%)</span>
+              <span className="text-sm font-black text-ink">{teamResult.synergyBreakdown.roleDiversity}%</span>
+            </div>
+            <div className="p-2 border-hard bg-canvas-subtle">
+              <span className="text-ink-muted uppercase block font-bold">SCHEDULE OVERLAP (15%)</span>
+              <span className="text-sm font-black text-ink">{teamResult.synergyBreakdown.availabilityOverlap}%</span>
+            </div>
+            <div className="p-2 border-hard bg-canvas-subtle">
+              <span className="text-ink-muted uppercase block font-bold">STYLE HARMONY (10%)</span>
+              <span className="text-sm font-black text-ink">{teamResult.synergyBreakdown.workingStyleHarmony}%</span>
+            </div>
+          </div>
+        )}
+
+        {/* Slots */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {(project.slots || []).map((slot) => (
             <div
@@ -311,7 +431,7 @@ export default function ProjectDetailPage() {
                     }}
                     className="px-1.5 py-0.5 bg-white hover:bg-ink hover:text-white border-hard-sm text-[10px] font-mono font-bold uppercase transition-colors"
                   >
-                    FIND →
+                    FIND MATCHES →
                   </button>
                 </div>
               )}
@@ -319,10 +439,10 @@ export default function ProjectDetailPage() {
           ))}
         </div>
 
-        {/* Skill Coverage */}
+        {/* Skill Coverage matrix */}
         <div className="pt-2">
           <p className="text-xs font-mono font-bold uppercase text-ink mb-2">
-            SKILL COVERAGE
+            SKILL COVERAGE BREAKDOWN
           </p>
           <div className="divide-y divide-ink/10 border-hard bg-canvas-subtle p-3 text-xs font-mono">
             {teamResult.skillCoverages.map((cov) => (
@@ -333,12 +453,12 @@ export default function ProjectDetailPage() {
                 <span className="font-bold text-ink">{cov.skillName}</span>
                 {cov.isCovered ? (
                   <Badge variant="lime" size="sm">
-                    COVERED
+                    COVERED ✓
                   </Badge>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <Badge variant="missing" size="sm">
-                      MISSING: {cov.skillName}
+                      MISSING
                     </Badge>
                     <button
                       type="button"
@@ -349,7 +469,7 @@ export default function ProjectDetailPage() {
                       }}
                       className="px-1.5 py-0.5 bg-white hover:bg-ink hover:text-white border-hard-sm text-[10px] font-mono font-bold uppercase"
                     >
-                      MATCH →
+                      FIND CANDIDATES →
                     </button>
                   </div>
                 )}
@@ -422,6 +542,21 @@ export default function ProjectDetailPage() {
         projectName={project.title}
         missingRole={selectedMatcherRole}
         requiredSkills={selectedRequiredSkills}
+        project={project}
+      />
+
+      {/* AI Squad Builder Modal */}
+      <SquadBuilderModal
+        isOpen={isSquadBuilderOpen}
+        onClose={() => setIsSquadBuilderOpen(false)}
+        project={project}
+      />
+
+      {/* Explainable Match Breakdown Modal */}
+      <MatchBreakdownModal
+        isOpen={isMatchBreakdownOpen}
+        onClose={() => setIsMatchBreakdownOpen(false)}
+        project={project}
       />
     </div>
   );

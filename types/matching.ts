@@ -19,6 +19,13 @@ export const DEFAULT_MATCHING_WEIGHTS: MatchingWeights = {
   workingStyle: 0.05,
 };
 
+export interface StructuredMatchWhy {
+  type: 'skill' | 'availability' | 'interest' | 'experience' | 'style';
+  title: string;
+  detail: string;
+  isPositive: boolean;
+}
+
 export interface IndividualMatchResult {
   userId: string;
   projectId: string;
@@ -40,6 +47,8 @@ export interface IndividualMatchResult {
   }[];
   missingSkills: string[];
   explanation: string[];
+  whyYouMatch?: StructuredMatchWhy[];
+  missingPoints?: StructuredMatchWhy[];
 }
 
 export interface TeamCompositionCandidate {
@@ -47,6 +56,8 @@ export interface TeamCompositionCandidate {
   assignedRole: string;
   individualMatchScore: number;
   primaryContributions: string[];
+  matchedSkills?: string[];
+  fitRationale?: string;
 }
 
 export interface TeamSkillCoverage {
@@ -60,12 +71,21 @@ export interface TeamSkillCoverage {
   };
 }
 
+export interface TeamSynergyBreakdown {
+  skillCoverage: number;       // 0 to 100 (50% weight)
+  roleDiversity: number;       // 0 to 100 (20% weight)
+  availabilityOverlap: number; // 0 to 100 (15% weight)
+  workingStyleHarmony: number; // 0 to 100 (10% weight)
+  experienceBalance: number;   // 0 to 100 (5% weight)
+}
+
 export interface TeamCompositionResult {
   projectId: string;
   teamScore: number; // 0 to 100
   skillCoverageRatio: number; // 0 to 1
   roleDiversityScore: number; // 0 to 100
   availabilityOverlapScore: number; // 0 to 100
+  synergyBreakdown?: TeamSynergyBreakdown;
   recommendedMembers: TeamCompositionCandidate[];
   skillCoverages: TeamSkillCoverage[];
   gaps: {

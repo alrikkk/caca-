@@ -1,5 +1,5 @@
 import { SkillImportance } from './project';
-import { SkillCategory } from './user';
+import { SkillCategory, ExperienceLevel, WorkingStyle } from './user';
 
 export interface ExtractedSkillRequirement {
   name: string;
@@ -32,4 +32,104 @@ export interface TeamGapExplanation {
   missingCapabilities: string[];
   recommendedNextHire: string;
   synergyHighlights: string[];
+}
+
+export interface SanitizedCandidate {
+  id: string;
+  aliasId: string;
+  fullName: string;
+  headline?: string;
+  college: string;
+  major: string;
+  gradYear: number;
+  experienceLevel: ExperienceLevel;
+  workingStyle: WorkingStyle;
+  skills: Array<{
+    name: string;
+    category: string;
+    proficiency: number;
+    yearsExperience?: number;
+  }>;
+  interests: Array<{
+    name: string;
+    category: string;
+  }>;
+  availability: {
+    hoursPerWeek: number;
+    timezone?: string;
+    prefersRemote?: boolean;
+    weekendAvailability?: boolean;
+    weekdayEvenings?: boolean;
+  };
+}
+
+export interface RecommendedSquadMember {
+  candidateId: string;
+  candidateName: string;
+  college: string;
+  major: string;
+  assignedRole: string;
+  fitScore: number; // 0-100
+  matchedSkills: string[];
+  missingSkills: string[];
+  rationale: string;
+  availabilityMatch: string;
+  workingStyleFit: string;
+}
+
+export interface SquadRecommendationResult {
+  projectId: string;
+  projectName: string;
+  projectCategory: string;
+  recommendedSquad: RecommendedSquadMember[];
+  predictedSynergyScore: number; // 0-100
+  synergySummary: string;
+  keyStrengths: string[];
+  potentialRisks: string[];
+}
+
+export interface GroundedMatchExplanation {
+  overallFitScore: number;
+  summary: string;
+  whyYouMatch: Array<{
+    label: string;
+    detail: string;
+    type: 'skill' | 'availability' | 'interest' | 'experience' | 'style';
+  }>;
+  missingCapabilities: Array<{
+    label: string;
+    detail: string;
+  }>;
+  roleSuitability: string;
+  growthOpportunities: string[];
+}
+
+export interface TeamSynergyExplanation {
+  synergyScore: number; // 0-100
+  breakdown: {
+    skillCoverage: number; // 0-100
+    roleDiversity: number; // 0-100
+    availabilityOverlap: number; // 0-100
+    workingStyleHarmony: number; // 0-100
+    experienceBalance: number; // 0-100
+  };
+  summary: string;
+  coveredCapabilities: string[];
+  uncoveredGaps: string[];
+  strengths: string[];
+  recommendations: string[];
+}
+
+export interface SearchIntentResult {
+  rawQuery: string;
+  extractedSkills: string[];
+  extractedRoles: string[];
+  extractedCategories: string[];
+  experiencePreference?: string;
+  availabilityPreference?: {
+    minHours?: number;
+    prefersEvenings?: boolean;
+    prefersWeekends?: boolean;
+  };
+  keywords: string[];
 }

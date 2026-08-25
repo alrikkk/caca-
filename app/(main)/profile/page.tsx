@@ -107,11 +107,11 @@ export default function ProfilePage() {
 
     try {
       const userId = user?.id || profile.id || `usr_${Date.now()}`;
-      const res = await ProfileService.uploadAndSaveAvatar(userId, file);
+      const res = await ProfileService.uploadAndSaveAvatar(userId, file, isDemoMode);
 
       if (res.error) {
         setUploadError(res.error);
-        setSaveError("COULD NOT SAVE PROFILE PICTURE: " + res.error);
+        setSaveError(res.error);
         setTimeout(() => setSaveError(null), 4000);
       } else if (res.url) {
         setAvatarUrl(res.url);
@@ -121,9 +121,10 @@ export default function ProfilePage() {
         setTimeout(() => setSaveSuccess(false), 3500);
       }
     } catch (err: any) {
-      const msg = err?.message || "Failed to upload avatar";
+      console.error("handleAvatarFileChange error:", err);
+      const msg = "Couldn't save changes right now, please try again.";
       setUploadError(msg);
-      setSaveError("COULD NOT SAVE PROFILE PICTURE: " + msg);
+      setSaveError(msg);
       setTimeout(() => setSaveError(null), 4000);
     } finally {
       setIsUploading(false);
@@ -151,11 +152,11 @@ export default function ProfilePage() {
 
     try {
       const userId = user?.id || profile.id || `usr_${Date.now()}`;
-      const res = await ProfileService.uploadAndSaveAvatar(userId, file);
+      const res = await ProfileService.uploadAndSaveAvatar(userId, file, isDemoMode);
 
       if (res.error) {
         setUploadError(res.error);
-        setSaveError("COULD NOT SAVE PROFILE PICTURE: " + res.error);
+        setSaveError(res.error);
         setTimeout(() => setSaveError(null), 4000);
       } else if (res.url) {
         setAvatarUrl(res.url);
@@ -165,9 +166,10 @@ export default function ProfilePage() {
         setTimeout(() => setSaveSuccess(false), 3500);
       }
     } catch (err: any) {
-      const msg = err?.message || "Failed to upload avatar";
+      console.error("handleCameraCapture error:", err);
+      const msg = "Couldn't save changes right now, please try again.";
       setUploadError(msg);
-      setSaveError("COULD NOT SAVE PROFILE PICTURE: " + msg);
+      setSaveError(msg);
       setTimeout(() => setSaveError(null), 4000);
     } finally {
       setIsUploading(false);
@@ -177,7 +179,7 @@ export default function ProfilePage() {
   const handleRemoveAvatar = async () => {
     const userId = user?.id || profile.id;
     if (userId) {
-      await ProfileService.removeAvatar(userId);
+      await ProfileService.removeAvatar(userId, isDemoMode);
     }
     setAvatarUrl(undefined);
     const updated = { ...profile, avatarUrl: undefined };
@@ -251,13 +253,13 @@ export default function ProfilePage() {
     };
 
     try {
-      await ProfileService.updateProfile(updated);
+      await ProfileService.updateProfile(updated, isDemoMode);
       setProfile(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (err: any) {
       console.error("Profile save exception:", err);
-      setSaveError(err?.message || "COULD NOT SAVE PROFILE. Please try again.");
+      setSaveError("Couldn't save changes right now, please try again.");
       setTimeout(() => setSaveError(null), 4000);
     } finally {
       setIsSaving(false);

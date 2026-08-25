@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { MatchBreakdownModal } from "./MatchBreakdownModal";
 import { MissingRoleMatcherModal } from "./MissingRoleMatcherModal";
+import { SquadBuilderModal } from "./SquadBuilderModal";
 import {
   Bookmark,
   Clock,
@@ -18,6 +19,7 @@ import {
   BarChart2,
   Check,
   UserPlus,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +35,7 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
   const { profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMatcherOpen, setIsMatcherOpen] = useState(false);
+  const [isSquadBuilderOpen, setIsSquadBuilderOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [isApplied, setIsApplied] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -98,9 +101,10 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
             <Badge variant="dark" size="sm">
               {project.category}
             </Badge>
-            <div
+            <button
+              onClick={() => setIsModalOpen(true)}
               className={cn(
-                "px-2 py-0.5 font-mono font-black text-xs border-hard uppercase tracking-tight",
+                "px-2 py-0.5 font-mono font-black text-xs border-hard uppercase tracking-tight hover:opacity-90 transition-opacity cursor-pointer flex items-center gap-1",
                 matchScore >= 90
                   ? "bg-caca-lime text-ink shadow-hard"
                   : matchScore >= 75
@@ -109,7 +113,7 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
               )}
             >
               <span>MATCH {matchScore}%</span>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -194,7 +198,7 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
         </div>
 
         {/* Action Footer */}
-        <div className="border-t-2 border-ink bg-canvas-subtle p-3 flex items-center justify-between">
+        <div className="border-t-2 border-ink bg-canvas-subtle p-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -203,7 +207,17 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
               className="flex items-center gap-1 text-xs"
             >
               <BarChart2 className="w-3 h-3" />
-              <span>BREAKDOWN</span>
+              <span>WHY YOU MATCH</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSquadBuilderOpen(true)}
+              className="flex items-center gap-1 text-xs bg-caca-yellow/20 hover:bg-caca-yellow/40 text-ink border-hard"
+            >
+              <Zap className="w-3 h-3 text-ink fill-ink" />
+              <span>BUILD SQUAD</span>
             </Button>
 
             <button
@@ -258,6 +272,13 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
         projectName={project.title}
         missingRole={selectedRole || project.missingRoles?.[0] || "Squad Member"}
         requiredSkills={project.requiredSkills.map((r) => r.skill.name)}
+        project={project}
+      />
+
+      <SquadBuilderModal
+        isOpen={isSquadBuilderOpen}
+        onClose={() => setIsSquadBuilderOpen(false)}
+        project={project}
       />
     </>
   );

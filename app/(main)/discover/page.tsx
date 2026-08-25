@@ -5,10 +5,11 @@ import Link from "next/link";
 import { MOCK_PROJECTS, MOCK_STUDENTS } from "@/lib/mock-data";
 import { ProfileService } from "@/services/profile-service";
 import { StudentProfile } from "@/types/user";
+import { SearchIntentResult } from "@/types/ai";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Sparkles, Filter, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function DiscoverPage() {
@@ -16,14 +17,43 @@ export default function DiscoverPage() {
   const [query, setQuery] = useState("");
   const [dbStudents, setDbStudents] = useState<StudentProfile[]>(MOCK_STUDENTS);
   const [isSearchingStudents, setIsSearchingStudents] = useState(false);
+  const [searchIntent, setSearchIntent] = useState<SearchIntentResult | null>(null);
 
-  // Search real students from Supabase on query change
+  // Search real students from Supabase or candidates pool on query change
   useEffect(() => {
     if (tab === "students") {
       setIsSearchingStudents(true);
       const timer = setTimeout(async () => {
         try {
-          const results = await ProfileService.searchProfiles(query || "a");
+          const q = query.trim();
+          if (!q) {
+            const all = await ProfileService.getAllCandidates();
+            setDbStudents(all.length > 0 ? all : MOCK_STUDENTS);
+            setSearchIntent(null);
+            setIsSearchingStudents(false);
+            return;
+          }
+
+          // If multi-word concept query, parse search intent
+          if (q.split(/\s+/).length > 1) {
+            try {
+              const res = await fetch("/api/ai/search-intent", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: q }),
+              });
+              if (res.ok) {
+                const intent: SearchIntentResult = await res.json();
+                setSearchIntent(intent);
+              }
+            } catch {
+              setSearchIntent(null);
+            }
+          } else {
+            setSearchIntent(null);
+          }
+
+          const results = await ProfileService.searchProfiles(q);
           setDbStudents(results.length > 0 ? results : MOCK_STUDENTS);
         } catch {
           setDbStudents(MOCK_STUDENTS);
@@ -51,6 +81,13 @@ export default function DiscoverPage() {
     { name: "Biotech & Scientific Computing", count: 6 },
     { name: "Fintech & Smart Contracts", count: 9 },
     { name: "Robotics & Embedded IoT", count: 11 },
+  ];
+
+  const conceptExamples = [
+    "Python developer interested in healthcare",
+    "React designer",
+    "ML student available evenings",
+    "UX person for accessibility project",
   ];
 
   return (
@@ -85,26 +122,73 @@ export default function DiscoverPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-          {isSearchingStudents ? (
-            <Loader2 className="w-4 h-4 text-ink animate-spin" />
-          ) : (
-            <Search className="w-4 h-4 text-ink" />
-          )}
+      {/* Search Bar */}
+      <div className="space-y-2">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+            {isSearchingStudents ? (
+              <Loader2 className="w-4 h-4 text-ink animate-spin" />
+            ) : (
+              <Search className="w-4 h-4 text-ink" />
+            )}
+          </div>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={
+              tab === "projects"
+                ? "SEARCH PROJECTS, SKILLS, CATEGORIES..."
+                : "SEARCH CONCEPTS: 'REACT DESIGNER', 'ML STUDENT EVENINGS'..."
+            }
+            className="w-full h-11 pl-10 pr-4 bg-white border-hard font-mono text-xs uppercase text-ink placeholder:text-ink-faint shadow-hard focus:outline-none focus:bg-canvas-subtle"
+          />
         </div>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={
-            tab === "projects"
-              ? "SEARCH PROJECTS, SKILLS, CATEGORIES..."
-              : "SEARCH PEOPLE, MAJORS, SKILLS, COLLEGES..."
-          }
-          className="w-full h-11 pl-10 pr-4 bg-white border-hard font-mono text-xs uppercase text-ink placeholder:text-ink-faint shadow-hard focus:outline-none"
-        />
+
+        {/* Concept query suggestions */}
+        {tab === "students" && !query && (
+          <div className="space-y-1">
+            <span className="text-[10px] font-mono text-ink-muted uppercase font-bold">
+              TRY NATURAL LANGUAGE SEARCH CONCEPTS:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {conceptExamples.map((ex) => (
+                <button
+                  key={ex}
+                  onClick={() => setQuery(ex)}
+                  className="px-2 py-1 bg-white border-hard-sm text-[10px] font-mono font-bold uppercase text-ink hover:bg-caca-yellow/30 transition-colors"
+                >
+                  &ldquo;{ex}&rdquo;
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Structured Intent Signals Banner */}
+        {searchIntent && (searchIntent.extractedSkills.length > 0 || searchIntent.extractedRoles.length > 0) && (
+          <div className="p-2.5 bg-canvas-subtle border-hard text-[11px] font-mono flex flex-wrap items-center gap-2">
+            <span className="text-ink-muted uppercase font-bold flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-caca-blue" />
+              <span>DETECTED INTENT:</span>
+            </span>
+            {searchIntent.extractedSkills.map((sk) => (
+              <Badge key={sk} variant="lime" size="sm">
+                SKILL: {sk}
+              </Badge>
+            ))}
+            {searchIntent.extractedRoles.map((role) => (
+              <Badge key={role} variant="dark" size="sm">
+                ROLE: {role}
+              </Badge>
+            ))}
+            {searchIntent.availabilityPreference?.prefersEvenings && (
+              <Badge variant="outline" size="sm">
+                AVAIL: EVENINGS
+              </Badge>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Domain tags (when browsing projects) */}
@@ -171,7 +255,7 @@ export default function DiscoverPage() {
             {dbStudents.map((s) => (
               <div
                 key={s.id}
-                className="bg-white border-hard shadow-hard p-4 flex flex-col justify-between space-y-3"
+                className="bg-white border-hard shadow-hard p-4 flex flex-col justify-between space-y-3 hover:bg-canvas-subtle transition-all"
               >
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
@@ -199,7 +283,7 @@ export default function DiscoverPage() {
                 </div>
 
                 <div className="flex items-center justify-between border-t border-ink/10 pt-2 text-xs font-mono">
-                  <span className="text-ink-muted uppercase">
+                  <span className="text-ink-muted uppercase text-[10px]">
                     {s.availability?.hoursPerWeek || 10}H/WK • {s.workingStyle || "TEAM"}
                   </span>
                   <Link href={`/profile/${s.id}`}>

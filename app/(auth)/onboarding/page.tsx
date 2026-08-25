@@ -13,7 +13,7 @@ import { Plus, Trash2, ArrowRight, Camera, Upload, X, AlertCircle } from "lucide
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, setProfile } = useAuth();
+  const { user, setProfile, isDemoMode } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,7 +49,7 @@ export default function OnboardingPage() {
     setUploadingAvatar(true);
     try {
       const tempId = user?.id || `usr_${Date.now()}`;
-      const res = await ProfileService.uploadAvatar(tempId, file);
+      const res = await ProfileService.uploadAvatar(tempId, file, isDemoMode);
       if (res.url) {
         setAvatarUrl(res.url);
       }

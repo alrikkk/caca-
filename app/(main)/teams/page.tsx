@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
+import { SquadBuilderModal } from "@/components/feed/SquadBuilderModal";
+import { Project } from "@/types/project";
 import {
   Plus,
   Users,
@@ -36,6 +38,10 @@ export default function TeamsPage() {
   const [teams, setTeams] = useState<TeamRecord[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Squad Builder Modal State
+  const [isSquadBuilderOpen, setIsSquadBuilderOpen] = useState(false);
+  const [squadBuilderProject, setSquadBuilderProject] = useState<Project | null>(null);
 
   // Create Team Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -347,6 +353,35 @@ export default function TeamsPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
+                          const proj = MOCK_PROJECTS.find((p) => p.id === team.projectId) || {
+                            id: team.projectId,
+                            ownerId: userId || "",
+                            title: team.projectName,
+                            tagline: "",
+                            description: "",
+                            category: "Technology",
+                            status: "recruiting" as const,
+                            maxTeamSize: team.maxMembers,
+                            durationWeeks: 8,
+                            hoursPerWeek: 12,
+                            requiredSkills: [],
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                          };
+                          setSquadBuilderProject(proj);
+                          setTargetTeam(team);
+                          setIsSquadBuilderOpen(true);
+                        }}
+                        className="h-7 text-xs flex items-center gap-1 bg-caca-yellow/20 hover:bg-caca-yellow/40 text-ink border-hard"
+                      >
+                        <Zap className="w-3 h-3 text-ink fill-ink" />
+                        <span>BUILD SQUAD</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
                           setTargetTeam(team);
                           setIsInviteModalOpen(true);
                           setInviteFeedback(null);
@@ -612,6 +647,19 @@ export default function TeamsPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* AI Squad Builder Modal */}
+      {squadBuilderProject && (
+        <SquadBuilderModal
+          isOpen={isSquadBuilderOpen}
+          onClose={() => {
+            setIsSquadBuilderOpen(false);
+            setSquadBuilderProject(null);
+          }}
+          project={squadBuilderProject}
+          teamId={targetTeam?.id}
+        />
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -8,7 +8,8 @@ import { Project } from "@/types/project";
 import { useAuth } from "@/lib/auth-context";
 import { CURRENT_USER } from "@/lib/mock-data";
 import { defaultMatchingEngine } from "@/matching/engine";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { GroundedMatchExplanation } from "@/types/ai";
+import { CheckCircle2, AlertTriangle, Sparkles, Check, X } from "lucide-react";
 
 interface MatchBreakdownModalProps {
   project: Project | null;
@@ -22,21 +23,48 @@ export const MatchBreakdownModal: React.FC<MatchBreakdownModalProps> = ({
   onClose,
 }) => {
   const { profile } = useAuth();
-  if (!project) return null;
+  const [aiExplanation, setAiExplanation] = useState<GroundedMatchExplanation | null>(null);
 
   const targetStudent = profile || CURRENT_USER;
-  const match = defaultMatchingEngine.calculateIndividualMatch(
-    targetStudent,
-    project
-  );
+  const match = project
+    ? defaultMatchingEngine.calculateIndividualMatch(targetStudent, project)
+    : null;
+
+  useEffect(() => {
+    if (!isOpen || !project) return;
+
+    const fetchExplanation = async () => {
+      try {
+        const res = await fetch("/api/ai/explain-match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project,
+            student: targetStudent,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAiExplanation(data);
+        }
+      } catch {
+        // Fallback to deterministic match object
+      }
+    };
+
+    fetchExplanation();
+  }, [isOpen, project, targetStudent]);
+
+  if (!project || !match) return null;
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`COMPATIBILITY: ${project.title}`}
+      title={`COMPATIBILITY: ${project.title.toUpperCase()}`}
+      className="max-w-xl"
     >
-      <div className="space-y-5">
+      <div className="space-y-4 font-mono text-xs">
         {/* Score Banner */}
         <div className="bg-canvas-subtle p-3.5 border-hard flex items-center justify-between">
           <div>
@@ -51,14 +79,91 @@ export const MatchBreakdownModal: React.FC<MatchBreakdownModalProps> = ({
             variant={match.overallScore >= 85 ? "lime" : "default"}
             size="sm"
           >
-            {match.overallScore >= 85 ? "HIGH" : "MODERATE"}
+            {match.overallScore >= 85 ? "HIGH FIT" : "MODERATE FIT"}
           </Badge>
         </div>
 
-        {/* Breakdown */}
-        <div className="space-y-2">
+        {/* AI Synthesis Note if available */}
+        {aiExplanation?.summary && (
+          <div className="p-2.5 bg-white border-hard text-[11px] space-y-1">
+            <div className="flex items-center gap-1.5 font-bold uppercase text-ink">
+              <Sparkles className="w-3.5 h-3.5 text-caca-blue" />
+              <span>MATCH RATIONALE</span>
+            </div>
+            <p className="text-ink-muted leading-relaxed">
+              {aiExplanation.summary}
+            </p>
+          </div>
+        )}
+
+        {/* WHY YOU MATCH & MISSING Sections */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* WHY YOU MATCH */}
+          <div className="p-3 border-hard bg-white space-y-2">
+            <div className="flex items-center gap-1.5 font-bold uppercase text-green-700">
+              <CheckCircle2 className="w-4 h-4 text-green-700" />
+              <span>WHY YOU MATCH</span>
+            </div>
+            <div className="space-y-1.5 text-[11px]">
+              {match.whyYouMatch && match.whyYouMatch.length > 0 ? (
+                match.whyYouMatch.map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5">
+                    <span className="text-green-700 font-bold">✓</span>
+                    <div>
+                      <span className="font-bold text-ink">{item.title}</span>
+                      <p className="text-[10px] text-ink-muted leading-tight">{item.detail}</p>
+                    </div>
+                  </div>
+                ))
+              ) : match.matchedSkills.length > 0 ? (
+                match.matchedSkills.map((s) => (
+                  <div key={s.skillName} className="flex items-center gap-1.5">
+                    <span className="text-green-700 font-bold">✓</span>
+                    <span className="font-bold text-ink">{s.skillName}</span>
+                    <span className="text-ink-muted text-[10px]">({s.userProficiency}/5)</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-ink-muted text-[10px]">No direct skill overlaps yet</p>
+              )}
+            </div>
+          </div>
+
+          {/* MISSING */}
+          <div className="p-3 border-hard bg-white space-y-2">
+            <div className="flex items-center gap-1.5 font-bold uppercase text-amber-700">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              <span>MISSING / GAPS</span>
+            </div>
+            <div className="space-y-1.5 text-[11px]">
+              {match.missingPoints && match.missingPoints.length > 0 ? (
+                match.missingPoints.map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5">
+                    <span className="text-amber-600 font-bold">⚠</span>
+                    <div>
+                      <span className="font-bold text-ink">{item.title}</span>
+                      <p className="text-[10px] text-ink-muted leading-tight">{item.detail}</p>
+                    </div>
+                  </div>
+                ))
+              ) : match.missingSkills.length > 0 ? (
+                match.missingSkills.map((s) => (
+                  <div key={s} className="flex items-center gap-1.5">
+                    <span className="text-amber-600 font-bold">⚠</span>
+                    <span className="text-ink">{s}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-ink-muted text-[10px]">All core skill requirements covered</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Deterministic Weighted Breakdown */}
+        <div className="space-y-2 pt-1">
           <p className="text-xs font-mono font-bold uppercase text-ink">
-            WEIGHTED COMPONENTS
+            DETERMINISTIC WEIGHTED COMPONENTS
           </p>
 
           <div className="grid grid-cols-2 gap-2 text-xs font-mono">
@@ -109,44 +214,6 @@ export const MatchBreakdownModal: React.FC<MatchBreakdownModalProps> = ({
               </div>
               <ProgressBar value={match.breakdown.workingStyleScore} color="lime" showValue={false} />
             </div>
-          </div>
-        </div>
-
-        {/* Skill Match List */}
-        <div className="space-y-1.5">
-          <p className="text-xs font-mono font-bold uppercase text-ink">
-            SKILL MATCH MATRIX
-          </p>
-          <div className="divide-y divide-ink/10 border-hard p-2.5 bg-canvas-subtle text-xs font-mono">
-            {match.matchedSkills.map((s) => (
-              <div
-                key={s.skillName}
-                className="flex items-center justify-between py-1"
-              >
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-700" />
-                  <span className="font-bold text-ink">{s.skillName}</span>
-                </div>
-                <span>
-                  {s.userProficiency}/5 (REQ {s.requiredProficiency}/5)
-                </span>
-              </div>
-            ))}
-
-            {match.missingSkills.map((s) => (
-              <div
-                key={s}
-                className="flex items-center justify-between py-1"
-              >
-                <div className="flex items-center gap-1.5 text-ink-muted">
-                  <XCircle className="w-3.5 h-3.5 text-red-600" />
-                  <span>{s}</span>
-                </div>
-                <Badge variant="missing" size="sm">
-                  MISSING
-                </Badge>
-              </div>
-            ))}
           </div>
         </div>
       </div>

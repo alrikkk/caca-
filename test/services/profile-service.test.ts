@@ -108,4 +108,58 @@ describe("ProfileService (Data Integrity & Persistence)", () => {
     const res = await ProfileService.uploadAndSaveAvatar("usr_123", oversizedFile);
     expect(res.error).toBe("Image size must be less than 5MB.");
   });
+
+  it("handles avatar upload in Demo Mode by skipping Supabase calls entirely", async () => {
+    vi.spyOn(supabaseClient, "isSupabaseConfigured").mockReturnValue(true);
+    const mockStorageUpload = vi.fn();
+    const mockSupabase = {
+      storage: { from: vi.fn().mockReturnValue({ upload: mockStorageUpload }) },
+      from: vi.fn(),
+    } as any;
+    vi.spyOn(supabaseClient, "createClient").mockReturnValue(mockSupabase);
+
+    const validImage = new File(["dummy image content"], "avatar.png", {
+      type: "image/png",
+    });
+
+    // In Demo Mode (isDemoMode = true)
+    const res = await ProfileService.uploadAndSaveAvatar("usr_curr_01", validImage, true);
+
+    expect(mockStorageUpload).not.toHaveBeenCalled();
+    expect(res.url).toBeDefined();
+    expect(res.error).toBeUndefined();
+  });
+
+  it("returns generic user-friendly error when Supabase Storage fails", async () => {
+    vi.spyOn(supabaseClient, "isSupabaseConfigured").mockReturnValue(true);
+    const mockStorageUpload = vi.fn().mockResolvedValue({
+      error: { message: "New row violates row-level security policy" },
+    });
+    const mockSupabase = {
+      storage: { from: vi.fn().mockReturnValue({ upload: mockStorageUpload }) },
+    } as any;
+    vi.spyOn(supabaseClient, "createClient").mockReturnValue(mockSupabase);
+
+    const validImage = new File(["dummy image content"], "avatar.png", {
+      type: "image/png",
+    });
+
+    const res = await ProfileService.uploadAndSaveAvatar("usr_123", validImage, false);
+
+    expect(res.url).toBeUndefined();
+    // Raw Postgres RLS error must be shielded from user
+    expect(res.error).toBe("Couldn't save changes right now, please try again.");
+  });
+
+  it("handles removeAvatar in Demo Mode without touching Supabase", async () => {
+    vi.spyOn(supabaseClient, "isSupabaseConfigured").mockReturnValue(true);
+    const mockFrom = vi.fn();
+    const mockSupabase = { from: mockFrom } as any;
+    vi.spyOn(supabaseClient, "createClient").mockReturnValue(mockSupabase);
+
+    const res = await ProfileService.removeAvatar("usr_curr_01", true);
+
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(res.success).toBe(true);
+  });
 });
