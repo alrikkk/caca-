@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/client";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { ProjectApplication, Project } from "@/types/project";
 import { MOCK_PROJECTS } from "@/lib/mock-data";
 
@@ -24,6 +24,10 @@ export class ApplicationService {
           // Ignored
         }
       }
+    }
+
+    if (!isSupabaseConfigured()) {
+      return false;
     }
 
     try {
@@ -70,21 +74,19 @@ export class ApplicationService {
       }
     }
 
-    try {
-      const supabase = createClient();
-      const { error } = await supabase.from("applications").insert({
-        project_id: projectId,
-        applicant_id: userId,
-        status: "pending",
-        compatibility_score: compatibilityScore,
-        pitch_note: pitchNote || null,
-      });
-
-      if (error) {
-        console.warn("Supabase application insert note:", error.message);
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        await supabase.from("applications").insert({
+          project_id: projectId,
+          applicant_id: userId,
+          status: "pending",
+          compatibility_score: compatibilityScore,
+          pitch_note: pitchNote || null,
+        });
+      } catch {
+        // Handled
       }
-    } catch {
-      // Ignored for offline demo
     }
 
     return { success: true, application: newApp };

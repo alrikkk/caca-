@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/client";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { StudentProfile, UserSkill, Availability, WorkingStyle, ExperienceLevel } from "@/types/user";
 import { CURRENT_USER } from "@/lib/mock-data";
 
@@ -24,7 +24,7 @@ export class ProfileService {
    * Fetches the current user profile from Supabase or active local session
    */
   static async getCurrentProfile(userId?: string): Promise<StudentProfile | null> {
-    if (!userId) {
+    if (!userId || !isSupabaseConfigured()) {
       if (typeof window !== "undefined") {
         const isDemo = localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true";
         if (isDemo) return CURRENT_USER;
@@ -172,32 +172,34 @@ export class ProfileService {
       },
     };
 
-    try {
-      const supabase = createClient();
-      await supabase.from("profiles").upsert({
-        id: userId,
-        email,
-        full_name: data.fullName,
-        college: data.college,
-        major: data.major,
-        grad_year: data.gradYear,
-        experience_level: data.experienceLevel,
-        working_style: data.workingStyle,
-        bio: data.bio || null,
-        github_url: data.githubUrl || null,
-        portfolio_url: data.portfolioUrl || null,
-      });
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        await supabase.from("profiles").upsert({
+          id: userId,
+          email,
+          full_name: data.fullName,
+          college: data.college,
+          major: data.major,
+          grad_year: data.gradYear,
+          experience_level: data.experienceLevel,
+          working_style: data.workingStyle,
+          bio: data.bio || null,
+          github_url: data.githubUrl || null,
+          portfolio_url: data.portfolioUrl || null,
+        });
 
-      await supabase.from("availability").upsert({
-        user_id: userId,
-        hours_per_week: data.hoursPerWeek,
-        timezone: newProfile.availability.timezone,
-        prefers_remote: true,
-        weekend_availability: true,
-        weekday_evenings: true,
-      });
-    } catch {
-      // Graceful offline fallback
+        await supabase.from("availability").upsert({
+          user_id: userId,
+          hours_per_week: data.hoursPerWeek,
+          timezone: newProfile.availability.timezone,
+          prefers_remote: true,
+          weekend_availability: true,
+          weekday_evenings: true,
+        });
+      } catch {
+        // Fallback
+      }
     }
 
     if (typeof window !== "undefined") {
@@ -217,21 +219,23 @@ export class ProfileService {
       localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(profile));
     }
 
-    try {
-      const supabase = createClient();
-      await supabase.from("profiles").update({
-        full_name: profile.fullName,
-        bio: profile.bio || null,
-        working_style: profile.workingStyle,
-        github_url: profile.githubUrl || null,
-        portfolio_url: profile.portfolioUrl || null,
-      }).eq("id", profile.id);
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        await supabase.from("profiles").update({
+          full_name: profile.fullName,
+          bio: profile.bio || null,
+          working_style: profile.workingStyle,
+          github_url: profile.githubUrl || null,
+          portfolio_url: profile.portfolioUrl || null,
+        }).eq("id", profile.id);
 
-      await supabase.from("availability").update({
-        hours_per_week: profile.availability.hoursPerWeek,
-      }).eq("user_id", profile.id);
-    } catch {
-      // Graceful fallback
+        await supabase.from("availability").update({
+          hours_per_week: profile.availability.hoursPerWeek,
+        }).eq("user_id", profile.id);
+      } catch {
+        // Fallback
+      }
     }
   }
 }
