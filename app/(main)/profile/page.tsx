@@ -28,6 +28,7 @@ import {
 export default function ProfilePage() {
   const { profile, setProfile, isDemoMode, user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState("");
   const [college, setCollege] = useState("");
@@ -272,7 +273,7 @@ export default function ProfilePage() {
             <p className="text-[11px] font-mono text-ink-muted">
               JPG, PNG or WEBP (Max 5MB).
             </p>
-            <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
               <Button
                 type="button"
                 variant="outline"
@@ -283,6 +284,17 @@ export default function ProfilePage() {
               >
                 <Upload className="w-3 h-3 mr-1" />
                 <span>{isUploading ? "UPLOADING..." : "UPLOAD PHOTO"}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={isUploading}
+                className="text-xs h-7"
+              >
+                <Camera className="w-3 h-3 mr-1" />
+                <span>TAKE PHOTO</span>
               </Button>
               {avatarUrl && (
                 <Button
@@ -302,6 +314,14 @@ export default function ProfilePage() {
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              className="hidden"
+              onChange={handleAvatarFileChange}
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="user"
               className="hidden"
               onChange={handleAvatarFileChange}
             />
