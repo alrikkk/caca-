@@ -50,6 +50,7 @@ export class ProfileService {
 
     try {
       const supabase = createClient();
+      // Fast single row query with maybeSingle to never throw on missing profile
       const { data: profileData, error } = await supabase
         .from("profiles")
         .select(`
@@ -154,12 +155,17 @@ export class ProfileService {
 
   /**
    * Fetches any student profile by ID (demo student or real Supabase student)
+   * Strictly never exposes private email, phone, or credentials in public lookup
    */
   static async getProfileById(userId: string): Promise<StudentProfile | null> {
     // 1. Check fictional mock students for Demo browsing
     const mockMatch = MOCK_STUDENTS.find((s) => s.id === userId);
     if (mockMatch) {
-      return mockMatch;
+      return {
+        ...mockMatch,
+        email: "",
+        phoneNumber: undefined,
+      };
     }
 
     // 2. Check local stored active profile
@@ -168,7 +174,13 @@ export class ProfileService {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.id === userId) return parsed;
+          if (parsed.id === userId) {
+            return {
+              ...parsed,
+              email: "",
+              phoneNumber: undefined,
+            };
+          }
         } catch {
           // Ignored
         }
@@ -191,7 +203,6 @@ export class ProfileService {
             experience_level,
             working_style,
             bio,
-            phone_number,
             avatar_url,
             github_url,
             portfolio_url,
@@ -263,7 +274,7 @@ export class ProfileService {
             experienceLevel: profileData.experience_level,
             workingStyle: profileData.working_style || "collaborative",
             bio: profileData.bio || undefined,
-            phoneNumber: profileData.phone_number || undefined,
+            phoneNumber: undefined, // Never expose phone in public profile lookup
             avatarUrl: profileData.avatar_url || undefined,
             githubUrl: profileData.github_url || undefined,
             portfolioUrl: profileData.portfolio_url || undefined,
@@ -279,6 +290,116 @@ export class ProfileService {
     }
 
     return null;
+  }
+
+  /**
+   * Search real student profiles from Supabase or curated mock list
+   * Strictly protects private fields (email, phone, passwords)
+   */
+  static async searchProfiles(query: string): Promise<StudentProfile[]> {
+    const q = query.trim();
+    if (!q) return [];
+
+    let isDemo = false;
+    if (typeof window !== "undefined") {
+      isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
+    }
+
+    if (isDemo) {
+      const lower = q.toLowerCase();
+      return MOCK_STUDENTS.filter(
+        (s) =>
+          s.fullName.toLowerCase().includes(lower) ||
+          s.college.toLowerCase().includes(lower) ||
+          s.major.toLowerCase().includes(lower) ||
+          s.skills.some((sk) => sk.name.toLowerCase().includes(lower))
+      ).map((s) => ({
+        ...s,
+        email: "",
+        phoneNumber: undefined,
+      }));
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("profiles")
+          .select(`
+            id,
+            full_name,
+            headline,
+            college,
+            major,
+            grad_year,
+            experience_level,
+            working_style,
+            bio,
+            avatar_url,
+            linkedin_url,
+            github_url,
+            portfolio_url,
+            user_skills (
+              proficiency,
+              skills ( name )
+            )
+          `)
+          .or(`full_name.ilike.%${q}%,college.ilike.%${q}%,major.ilike.%${q}%`)
+          .limit(15);
+
+        if (!error && data && data.length > 0) {
+          return data.map((p: any) => ({
+            id: p.id,
+            email: "", // Privacy protected
+            fullName: p.full_name,
+            headline: p.headline,
+            college: p.college,
+            major: p.major,
+            gradYear: p.grad_year,
+            experienceLevel: p.experience_level,
+            workingStyle: p.working_style || "collaborative",
+            bio: p.bio || undefined,
+            avatarUrl: p.avatar_url || undefined,
+            linkedinUrl: p.linkedin_url || undefined,
+            githubUrl: p.github_url || undefined,
+            portfolioUrl: p.portfolio_url || undefined,
+            skills: (p.user_skills || []).map((us: any) => ({
+              id: `sk_${Math.random()}`,
+              name: us.skills?.name || "Skill",
+              category: "general",
+              proficiency: us.proficiency,
+              yearsExperience: 1,
+            })),
+            interests: [],
+            availability: {
+              hoursPerWeek: 10,
+              timezone: "UTC",
+              prefersRemote: true,
+              weekendAvailability: true,
+              weekdayEvenings: true,
+            },
+          }));
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    // Fallback to searching mock students
+    const lower = q.toLowerCase();
+    return MOCK_STUDENTS.filter(
+      (s) =>
+        s.fullName.toLowerCase().includes(lower) ||
+        s.college.toLowerCase().includes(lower) ||
+        s.major.toLowerCase().includes(lower) ||
+        s.skills.some((sk) => sk.name.toLowerCase().includes(lower))
+    ).map((s) => ({
+      ...s,
+      email: "",
+      phoneNumber: undefined,
+    }));
   }
 
   /**
@@ -431,7 +552,6 @@ export class ProfileService {
 
         if (uploadError) {
           console.warn("Supabase storage upload error:", uploadError.message);
-          // Fall back to local data URL if bucket is not created yet
           return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = () => resolve({ url: reader.result as string });

@@ -1,17 +1,39 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { MOCK_PROJECTS, MOCK_STUDENTS } from "@/lib/mock-data";
+import { ProfileService } from "@/services/profile-service";
+import { StudentProfile } from "@/types/user";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
-import { Search, Sparkles, UserCheck } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function DiscoverPage() {
   const [tab, setTab] = useState<"projects" | "students">("projects");
   const [query, setQuery] = useState("");
+  const [dbStudents, setDbStudents] = useState<StudentProfile[]>(MOCK_STUDENTS);
+  const [isSearchingStudents, setIsSearchingStudents] = useState(false);
+
+  // Search real students from Supabase on query change
+  useEffect(() => {
+    if (tab === "students") {
+      setIsSearchingStudents(true);
+      const timer = setTimeout(async () => {
+        try {
+          const results = await ProfileService.searchProfiles(query || "a");
+          setDbStudents(results.length > 0 ? results : MOCK_STUDENTS);
+        } catch {
+          setDbStudents(MOCK_STUDENTS);
+        } finally {
+          setIsSearchingStudents(false);
+        }
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [query, tab]);
 
   const matchingProjects = MOCK_PROJECTS.filter(
     (p) =>
@@ -20,14 +42,6 @@ export default function DiscoverPage() {
       p.requiredSkills.some((s) =>
         s.skill.name.toLowerCase().includes(query.toLowerCase())
       )
-  );
-
-  const matchingStudents = MOCK_STUDENTS.filter(
-    (s) =>
-      s.fullName.toLowerCase().includes(query.toLowerCase()) ||
-      s.college.toLowerCase().includes(query.toLowerCase()) ||
-      s.major.toLowerCase().includes(query.toLowerCase()) ||
-      s.skills.some((sk) => sk.name.toLowerCase().includes(query.toLowerCase()))
   );
 
   const categories = [
@@ -66,7 +80,7 @@ export default function DiscoverPage() {
                 : "bg-white text-ink hover:bg-canvas-subtle"
             )}
           >
-            STUDENTS ({matchingStudents.length})
+            PEOPLE ({dbStudents.length})
           </button>
         </div>
       </div>
@@ -74,7 +88,11 @@ export default function DiscoverPage() {
       {/* Search */}
       <div className="relative">
         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-          <Search className="w-4 h-4 text-ink" />
+          {isSearchingStudents ? (
+            <Loader2 className="w-4 h-4 text-ink animate-spin" />
+          ) : (
+            <Search className="w-4 h-4 text-ink" />
+          )}
         </div>
         <input
           type="text"
@@ -83,7 +101,7 @@ export default function DiscoverPage() {
           placeholder={
             tab === "projects"
               ? "SEARCH PROJECTS, SKILLS, CATEGORIES..."
-              : "SEARCH STUDENTS, MAJORS, SKILLS, UNIVERSITIES..."
+              : "SEARCH PEOPLE, MAJORS, SKILLS, COLLEGES..."
           }
           className="w-full h-11 pl-10 pr-4 bg-white border-hard font-mono text-xs uppercase text-ink placeholder:text-ink-faint shadow-hard focus:outline-none"
         />
@@ -150,7 +168,7 @@ export default function DiscoverPage() {
       {tab === "students" && (
         <div className="space-y-3 pt-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {matchingStudents.map((s) => (
+            {dbStudents.map((s) => (
               <div
                 key={s.id}
                 className="bg-white border-hard shadow-hard p-4 flex flex-col justify-between space-y-3"
@@ -158,11 +176,11 @@ export default function DiscoverPage() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
                     <Avatar name={s.fullName} src={s.avatarUrl} size="md" />
-                    <div className="space-y-0.5">
-                      <h3 className="font-mono font-black text-sm uppercase text-ink">
+                    <div className="space-y-0.5 min-w-0">
+                      <h3 className="font-mono font-black text-sm uppercase text-ink truncate">
                         {s.fullName}
                       </h3>
-                      <p className="text-xs font-mono text-ink-muted">
+                      <p className="text-xs font-mono text-ink-muted truncate">
                         {s.major} • {s.college}
                       </p>
                     </div>
@@ -182,7 +200,7 @@ export default function DiscoverPage() {
 
                 <div className="flex items-center justify-between border-t border-ink/10 pt-2 text-xs font-mono">
                   <span className="text-ink-muted uppercase">
-                    {s.availability.hoursPerWeek}H/WK • {s.workingStyle}
+                    {s.availability?.hoursPerWeek || 10}H/WK • {s.workingStyle || "TEAM"}
                   </span>
                   <Link href={`/profile/${s.id}`}>
                     <Button variant="outline" size="sm" className="h-7 text-xs">

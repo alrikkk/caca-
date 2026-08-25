@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
+import { GlobalPeopleSearch } from "@/components/search/GlobalPeopleSearch";
 import { useAuth } from "@/lib/auth-context";
 import { LogOut } from "lucide-react";
 
@@ -26,9 +27,9 @@ export const Navbar: React.FC = () => {
     : "Guest";
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white border-b-2 border-ink h-16 flex items-center justify-between px-4 sm:px-8">
+    <header className="sticky top-0 z-40 w-full bg-white border-b-2 border-ink h-16 flex items-center justify-between px-3 sm:px-6 gap-3">
       {/* Brand */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 shrink-0">
         <Link
           href="/feed"
           className="flex items-center gap-2 font-black tracking-tighter text-2xl uppercase hover:opacity-90 transition-opacity"
@@ -39,28 +40,33 @@ export const Navbar: React.FC = () => {
         </Link>
 
         {isDemoMode ? (
-          <Badge variant="lime" size="sm">
+          <Badge variant="lime" size="sm" className="hidden xs:inline-flex">
             DEMO MODE
           </Badge>
         ) : profile?.college ? (
-          <Badge variant="default" size="sm" className="hidden sm:inline-flex">
+          <Badge variant="default" size="sm" className="hidden md:inline-flex">
             {profile.college}
           </Badge>
         ) : null}
       </div>
 
+      {/* Global People Search */}
+      <div className="flex-1 max-w-xs sm:max-w-sm mx-auto">
+        <GlobalPeopleSearch />
+      </div>
+
       {/* User Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 shrink-0">
         <Link
           href="/profile"
-          className="flex items-center gap-2.5 hover:opacity-85 transition-opacity"
+          className="flex items-center gap-2 hover:opacity-85 transition-opacity"
         >
           <Avatar
             name={displayName}
             src={profile?.avatarUrl}
             size="sm"
           />
-          <span className="font-mono text-xs font-bold uppercase hidden sm:inline-block">
+          <span className="font-mono text-xs font-bold uppercase hidden lg:inline-block">
             {displayName}
           </span>
         </Link>
