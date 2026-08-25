@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatAuthError } from "./auth-context";
+import { formatAuthError } from "../../lib/auth-context";
 
 describe("formatAuthError (Pure Authentication Error Formatter)", () => {
   it("maps Supabase rate limit errors to user-friendly alert message", () => {

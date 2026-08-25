@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ProfileService, OnboardingData } from "./profile-service";
+import { ProfileService, OnboardingData } from "../../services/profile-service";
 import * as supabaseClient from "@/lib/supabase/client";
 
 describe("ProfileService (Data Integrity & Persistence)", () => {

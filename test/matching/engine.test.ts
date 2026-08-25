@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MatchingEngine } from "./engine";
+import { MatchingEngine } from "../../matching/engine";
 import { StudentProfile } from "@/types/user";
 import { Project } from "@/types/project";
 
