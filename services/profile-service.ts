@@ -604,26 +604,27 @@ export class ProfileService {
   }
 
   /**
-   * Uploads an avatar image to Supabase Storage
+   * Uploads an avatar image to Supabase Storage and immediately persists avatar_url to the profile database
    */
-  static async uploadAvatar(
+  static async uploadAndSaveAvatar(
     userId: string,
     file: File
   ): Promise<{ url?: string; error?: string }> {
     if (!file.type.startsWith("image/")) {
-      return { error: "File must be an image (JPEG, PNG, WEBP, GIF)" };
+      return { error: "File must be an image (JPEG, PNG, WEBP, GIF)." };
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      return { error: "Image size must be less than 5MB" };
+      return { error: "Image size must be less than 5MB." };
     }
 
     if (isSupabaseConfigured()) {
       try {
         const supabase = createClient();
-        const fileExt = file.name.split(".").pop() || "png";
+        const fileExt = file.name.split(".").pop()?.toLowerCase() || "png";
         const filePath = `${userId}/avatar_${Date.now()}.${fileExt}`;
 
+        // 1. Upload file to Supabase Storage
         const { error: uploadError } = await supabase.storage
           .from("avatars")
           .upload(filePath, file, {
@@ -632,30 +633,112 @@ export class ProfileService {
           });
 
         if (uploadError) {
-          console.warn("Supabase storage upload error:", uploadError.message);
-          return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve({ url: reader.result as string });
-            reader.onerror = () => resolve({ error: "Failed to read image" });
-            reader.readAsDataURL(file);
-          });
+          console.error("Supabase storage upload error:", uploadError);
+          return { error: uploadError.message || "Failed to upload avatar to storage." };
         }
 
+        // 2. Obtain permanent public URL
         const { data: { publicUrl } } = supabase.storage
           .from("avatars")
           .getPublicUrl(filePath);
 
+        // 3. Immediately persist avatar_url in the database
+        const { error: dbError } = await supabase
+          .from("profiles")
+          .update({ avatar_url: publicUrl })
+          .eq("id", userId);
+
+        if (dbError) {
+          console.error("Supabase profile avatar update error:", dbError);
+          return { error: dbError.message || "Failed to save avatar reference to profile." };
+        }
+
+        // 4. Update local storage profile cache if present
+        if (typeof window !== "undefined") {
+          const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              parsed.avatarUrl = publicUrl;
+              localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+
         return { url: publicUrl };
       } catch (err: any) {
-        console.warn("Storage exception, falling back to local:", err?.message);
+        console.error("Storage upload exception:", err);
+        return { error: err?.message || "An unexpected error occurred while saving the avatar." };
       }
     }
 
+    // Fallback for standalone offline testing only
     return new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onload = () => resolve({ url: reader.result as string });
-      reader.onerror = () => resolve({ error: "Failed to read image" });
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        if (typeof window !== "undefined") {
+          const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              parsed.avatarUrl = base64;
+              localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
+            } catch {}
+          }
+        }
+        resolve({ url: base64 });
+      };
+      reader.onerror = () => resolve({ error: "Failed to read image." });
       reader.readAsDataURL(file);
     });
+  }
+
+  /**
+   * Uploads an avatar image (legacy compatibility)
+   */
+  static async uploadAvatar(
+    userId: string,
+    file: File
+  ): Promise<{ url?: string; error?: string }> {
+    return this.uploadAndSaveAvatar(userId, file);
+  }
+
+  /**
+   * Removes the avatar from the database and profile
+   */
+  static async removeAvatar(userId: string): Promise<{ success: boolean; error?: string }> {
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { error: dbError } = await supabase
+          .from("profiles")
+          .update({ avatar_url: null })
+          .eq("id", userId);
+
+        if (dbError) {
+          console.error("Failed to remove avatar from database:", dbError);
+          return { success: false, error: dbError.message };
+        }
+      } catch (err: any) {
+        console.error("removeAvatar exception:", err);
+        return { success: false, error: err?.message };
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          parsed.avatarUrl = undefined;
+          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
+        } catch {}
+      }
+    }
+
+    return { success: true };
   }
 }

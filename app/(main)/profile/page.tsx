@@ -95,30 +95,45 @@ export default function ProfilePage() {
 
     setUploadError(null);
     setIsUploading(true);
+    setSaveError(null);
+    setSaveSuccess(false);
 
     try {
       const userId = user?.id || profile.id || `usr_${Date.now()}`;
-      const res = await ProfileService.uploadAvatar(userId, file);
+      const res = await ProfileService.uploadAndSaveAvatar(userId, file);
 
       if (res.error) {
         setUploadError(res.error);
+        setSaveError("COULD NOT SAVE PROFILE PICTURE: " + res.error);
+        setTimeout(() => setSaveError(null), 4000);
       } else if (res.url) {
         setAvatarUrl(res.url);
         const updated = { ...profile, avatarUrl: res.url };
         setProfile(updated);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3500);
       }
     } catch (err: any) {
-      setUploadError(err?.message || "Failed to upload avatar");
+      const msg = err?.message || "Failed to upload avatar";
+      setUploadError(msg);
+      setSaveError("COULD NOT SAVE PROFILE PICTURE: " + msg);
+      setTimeout(() => setSaveError(null), 4000);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleRemoveAvatar = () => {
+  const handleRemoveAvatar = async () => {
+    const userId = user?.id || profile.id;
+    if (userId) {
+      await ProfileService.removeAvatar(userId);
+    }
     setAvatarUrl(undefined);
     const updated = { ...profile, avatarUrl: undefined };
     setProfile(updated);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3500);
   };
 
   const handleAddSkill = (e?: React.FormEvent) => {
