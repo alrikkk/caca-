@@ -15,11 +15,13 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
+import { MissingRoleMatcherModal } from "@/components/feed/MissingRoleMatcherModal";
 import {
   ArrowLeft,
   Check,
   Plus,
   Users,
+  UserPlus,
 } from "lucide-react";
 
 export default function ProjectDetailPage() {
@@ -31,6 +33,11 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [isApplied, setIsApplied] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Missing role matcher
+  const [isMatcherOpen, setIsMatcherOpen] = useState(false);
+  const [selectedMatcherRole, setSelectedMatcherRole] = useState("Squad Member");
+  const [selectedRequiredSkills, setSelectedRequiredSkills] = useState<string[]>([]);
 
   // Team creation modal
   const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
@@ -291,9 +298,22 @@ export default function ProjectDetailPage() {
                   />
                 </Link>
               ) : (
-                <Badge variant="coral" size="sm">
-                  OPEN
-                </Badge>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Badge variant="coral" size="sm">
+                    OPEN
+                  </Badge>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMatcherRole(slot.roleTitle);
+                      setSelectedRequiredSkills(slot.requiredSkills);
+                      setIsMatcherOpen(true);
+                    }}
+                    className="px-1.5 py-0.5 bg-white hover:bg-ink hover:text-white border-hard-sm text-[10px] font-mono font-bold uppercase transition-colors"
+                  >
+                    FIND →
+                  </button>
+                </div>
               )}
             </div>
           ))}
@@ -316,9 +336,22 @@ export default function ProjectDetailPage() {
                     COVERED
                   </Badge>
                 ) : (
-                  <Badge variant="missing" size="sm">
-                    MISSING: {cov.skillName}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="missing" size="sm">
+                      MISSING: {cov.skillName}
+                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMatcherRole(`${cov.skillName} Specialist`);
+                        setSelectedRequiredSkills([cov.skillName]);
+                        setIsMatcherOpen(true);
+                      }}
+                      className="px-1.5 py-0.5 bg-white hover:bg-ink hover:text-white border-hard-sm text-[10px] font-mono font-bold uppercase"
+                    >
+                      MATCH →
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -380,6 +413,16 @@ export default function ProjectDetailPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Missing Role Candidate Matcher Modal */}
+      <MissingRoleMatcherModal
+        isOpen={isMatcherOpen}
+        onClose={() => setIsMatcherOpen(false)}
+        projectId={project.id}
+        projectName={project.title}
+        missingRole={selectedMatcherRole}
+        requiredSkills={selectedRequiredSkills}
+      />
     </div>
   );
 }

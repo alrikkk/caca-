@@ -100,15 +100,36 @@ export default function StudentProfileDetailPage() {
             size="lg"
           />
           <div className="space-y-1 flex-1">
-            <h1 className="text-xl sm:text-2xl font-black font-mono tracking-tight uppercase text-ink">
-              {student.fullName}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black font-mono tracking-tight uppercase text-ink">
+                {student.fullName}
+              </h1>
+              {student.availabilityStatus && (
+                <span className="px-2 py-0.5 bg-caca-lime border-hard-sm text-[10px] font-mono font-bold uppercase text-ink">
+                  ● {student.availabilityStatus.replace("_", " ")}
+                </span>
+              )}
+            </div>
             <p className="text-xs font-mono font-bold text-ink">
               {student.major} • {student.college}
             </p>
             <p className="text-[11px] font-mono text-ink-muted uppercase">
               {student.experienceLevel} • GRAD {student.gradYear}
             </p>
+
+            {student.openTo && student.openTo.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1.5">
+                <span className="text-[10px] font-mono text-ink-muted font-bold self-center mr-1">OPEN TO:</span>
+                {student.openTo.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-1.5 py-0.5 bg-canvas-subtle border-hard-sm text-[10px] font-mono font-bold uppercase text-ink"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

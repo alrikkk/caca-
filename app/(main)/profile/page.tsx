@@ -45,6 +45,8 @@ export default function ProfilePage() {
   const [portfolioUrl, setPortfolioUrl] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [skills, setSkills] = useState<UserSkill[]>([]);
+  const [openTo, setOpenTo] = useState<string[]>(["HACKATHONS", "STARTUPS"]);
+  const [availabilityStatus, setAvailabilityStatus] = useState<"AVAILABLE" | "LIMITED" | "NOT_LOOKING">("AVAILABLE");
 
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillProf, setNewSkillProf] = useState(4);
@@ -71,6 +73,8 @@ export default function ProfilePage() {
       setPortfolioUrl(profile.portfolioUrl || "");
       setLinkedinUrl(profile.linkedinUrl || "");
       setSkills(profile.skills || []);
+      setOpenTo(profile.openTo || ["HACKATHONS", "STARTUPS"]);
+      setAvailabilityStatus(profile.availabilityStatus || "AVAILABLE");
     }
   }, [profile]);
 
@@ -238,6 +242,8 @@ export default function ProfilePage() {
       portfolioUrl: portfolioUrl.trim() || undefined,
       linkedinUrl: cleanLinkedin || undefined,
       skills,
+      openTo,
+      availabilityStatus,
       availability: {
         ...profile.availability,
         hoursPerWeek,
@@ -289,6 +295,50 @@ export default function ProfilePage() {
           <span>{saveError}</span>
         </div>
       )}
+
+      {/* Profile Completeness Card */}
+      {(() => {
+        const items = [
+          { label: "Full Name", complete: Boolean(fullName.trim()) },
+          { label: "College & Major", complete: Boolean(college.trim() && major.trim()) },
+          { label: "Bio / Intro", complete: Boolean(bio.trim()) },
+          { label: "Skills (1+)", complete: skills.length > 0 },
+          { label: "Avatar Photo", complete: Boolean(avatarUrl) },
+          { label: "LinkedIn / Web", complete: Boolean(linkedinUrl.trim() || portfolioUrl.trim() || githubUrl.trim()) },
+        ];
+        const count = items.filter((i) => i.complete).length;
+        const pct = Math.round((count / items.length) * 100);
+
+        return (
+          <div className="bg-canvas-subtle border-hard p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono text-ink-muted uppercase font-bold">PROFILE READINESS</span>
+                <p className="font-mono font-black text-sm text-ink uppercase">
+                  PROFILE {pct}% COMPLETE
+                </p>
+              </div>
+              <Badge variant={pct >= 80 ? "lime" : "default"} size="sm">
+                {pct >= 80 ? "OPTIMIZED" : `${items.length - count} SUGGESTED`}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1">
+              {items.map((item) => (
+                <div
+                  key={item.label}
+                  className={`px-2 py-1 border-hard-sm text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${
+                    item.complete ? "bg-white text-ink" : "bg-transparent text-ink-muted border-dashed"
+                  }`}
+                >
+                  <span>{item.complete ? "✓" : "○"}</span>
+                  <span className="truncate">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Main Info Card */}
       <div className="bg-white border-hard shadow-hard p-5 sm:p-6 space-y-6">
@@ -607,6 +657,67 @@ export default function ProfilePage() {
                 <option value="structured">Structured</option>
                 <option value="mentor-oriented">Mentor-Oriented</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Discovery & Opportunities Intent */}
+        <div className="space-y-4 pt-2 border-t border-ink/10">
+          <div className="space-y-2">
+            <label className="block text-xs font-mono font-bold uppercase text-ink">
+              CURRENT AVAILABILITY STATUS
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                { id: "AVAILABLE", label: "● AVAILABLE FOR TEAMS", desc: "Actively seeking squads & projects" },
+                { id: "LIMITED", label: "◐ LIMITED BANDWIDTH", desc: "Open to lightweight contributions" },
+                { id: "NOT_LOOKING", label: "○ NOT CURRENTLY LOOKING", desc: "Focused on current commitments" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setAvailabilityStatus(opt.id as any)}
+                  className={`p-2.5 border-hard text-left transition-all ${
+                    availabilityStatus === opt.id
+                      ? "bg-caca-lime text-ink shadow-hard-sm"
+                      : "bg-white hover:bg-canvas-subtle text-ink"
+                  }`}
+                >
+                  <p className="font-mono font-black text-xs uppercase">{opt.label}</p>
+                  <p className="font-mono text-[10px] text-ink-muted leading-tight mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-mono font-bold uppercase text-ink">
+              OPEN TO (DISCOVERY TAGS)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {["HACKATHONS", "STARTUPS", "RESEARCH", "SIDE PROJECTS", "INTERNSHIPS"].map((tag) => {
+                const isSelected = openTo.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        setOpenTo(openTo.filter((t) => t !== tag));
+                      } else {
+                        setOpenTo([...openTo, tag]);
+                      }
+                    }}
+                    className={`px-3 py-1.5 border-hard text-xs font-mono font-bold uppercase transition-all ${
+                      isSelected
+                        ? "bg-ink text-caca-lime shadow-hard-sm"
+                        : "bg-white hover:bg-canvas-subtle text-ink"
+                    }`}
+                  >
+                    {isSelected ? `✓ ${tag}` : `+ ${tag}`}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

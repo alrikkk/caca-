@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { GlobalPeopleSearch } from "@/components/search/GlobalPeopleSearch";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useAuth } from "@/lib/auth-context";
 import { LogOut } from "lucide-react";
 
@@ -57,6 +58,8 @@ export const Navbar: React.FC = () => {
 
       {/* User Controls */}
       <div className="flex items-center gap-2.5 shrink-0">
+        <NotificationBell />
+
         <Link
           href="/profile"
           className="flex items-center gap-2 hover:opacity-85 transition-opacity"

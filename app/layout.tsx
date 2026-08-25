@@ -19,6 +19,11 @@ export const metadata: Metadata = {
   title: "Caca | College Project Discovery & Team Formation",
   description:
     "Intelligent college project discovery and complementary team formation platform for university students.",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({

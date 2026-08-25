@@ -20,6 +20,8 @@ export interface OnboardingData {
   linkedinUrl?: string;
   hoursPerWeek: number;
   skills: { name: string; category: string; proficiency: number }[];
+  openTo?: string[];
+  availabilityStatus?: "AVAILABLE" | "LIMITED" | "NOT_LOOKING";
 }
 
 export class ProfileService {
@@ -136,6 +138,8 @@ export class ProfileService {
         skills,
         interests,
         availability: avail,
+        openTo: profileData.open_to || ["HACKATHONS", "STARTUPS"],
+        availabilityStatus: profileData.availability_status || "AVAILABLE",
       };
 
       if (typeof window !== "undefined") {
@@ -203,6 +207,8 @@ export class ProfileService {
             github_url,
             portfolio_url,
             linkedin_url,
+            open_to,
+            availability_status,
             user_skills (
               proficiency,
               years_experience,
@@ -278,6 +284,8 @@ export class ProfileService {
             skills,
             interests,
             availability: avail,
+            openTo: profileData.open_to || ["HACKATHONS", "STARTUPS"],
+            availabilityStatus: profileData.availability_status || "AVAILABLE",
           };
         }
       } catch (err) {
@@ -289,7 +297,7 @@ export class ProfileService {
   }
 
   /**
-   * Search real student profiles with strict privacy protection
+   * Search real student profiles with strict privacy protection across names, colleges, majors, skills, and tags
    */
   static async searchProfiles(query: string): Promise<StudentProfile[]> {
     const q = query.trim();
@@ -309,7 +317,8 @@ export class ProfileService {
           s.fullName.toLowerCase().includes(lower) ||
           s.college.toLowerCase().includes(lower) ||
           s.major.toLowerCase().includes(lower) ||
-          s.skills.some((sk) => sk.name.toLowerCase().includes(lower))
+          s.skills.some((sk) => sk.name.toLowerCase().includes(lower)) ||
+          (s.openTo || []).some((tag) => tag.toLowerCase().includes(lower))
       ).map((s) => ({
         ...s,
         email: "",
@@ -320,7 +329,26 @@ export class ProfileService {
     if (isSupabaseConfigured()) {
       try {
         const supabase = createClient();
-        const { data, error } = await supabase
+
+        // 1. Check if query matches skill names
+        const { data: matchingSkills } = await supabase
+          .from("skills")
+          .select("id")
+          .ilike("name", `%${q}%`);
+
+        const skillIds = (matchingSkills || []).map((s) => s.id);
+
+        let userIdsFromSkills: string[] = [];
+        if (skillIds.length > 0) {
+          const { data: userSkillRows } = await supabase
+            .from("user_skills")
+            .select("user_id")
+            .in("skill_id", skillIds);
+          userIdsFromSkills = (userSkillRows || []).map((r) => r.user_id);
+        }
+
+        // 2. Query profiles
+        let queryBuilder = supabase
           .from("profiles")
           .select(`
             id,
@@ -336,13 +364,25 @@ export class ProfileService {
             linkedin_url,
             github_url,
             portfolio_url,
+            open_to,
+            availability_status,
             user_skills (
               proficiency,
               skills ( name )
             )
-          `)
-          .or(`full_name.ilike.%${q}%,college.ilike.%${q}%,major.ilike.%${q}%`)
-          .limit(15);
+          `);
+
+        if (userIdsFromSkills.length > 0) {
+          queryBuilder = queryBuilder.or(
+            `full_name.ilike.%${q}%,college.ilike.%${q}%,major.ilike.%${q}%,id.in.(${userIdsFromSkills.join(",")})`
+          );
+        } else {
+          queryBuilder = queryBuilder.or(
+            `full_name.ilike.%${q}%,college.ilike.%${q}%,major.ilike.%${q}%`
+          );
+        }
+
+        const { data, error } = await queryBuilder.limit(20);
 
         if (!error && data && data.length > 0) {
           return data.map((p: any) => ({
@@ -360,6 +400,8 @@ export class ProfileService {
             linkedinUrl: p.linkedin_url || undefined,
             githubUrl: p.github_url || undefined,
             portfolioUrl: p.portfolio_url || undefined,
+            openTo: p.open_to || ["HACKATHONS", "STARTUPS"],
+            availabilityStatus: p.availability_status || "AVAILABLE",
             skills: (p.user_skills || []).map((us: any) => ({
               id: `sk_${Math.random()}`,
               name: us.skills?.name || "Skill",
@@ -394,6 +436,22 @@ export class ProfileService {
       email: "",
       phoneNumber: undefined,
     }));
+  }
+
+  /**
+   * Find candidate profiles matching missing role skills
+   */
+  static async findCandidatesForRole(
+    requiredSkills: string[],
+    roleTitle?: string
+  ): Promise<StudentProfile[]> {
+    if (requiredSkills.length === 0) {
+      return this.searchProfiles(roleTitle || "Engineer");
+    }
+
+    const query = requiredSkills[0];
+    const results = await this.searchProfiles(query);
+    return results;
   }
 
   /**
@@ -435,6 +493,8 @@ export class ProfileService {
         weekendAvailability: true,
         weekdayEvenings: true,
       },
+      openTo: data.openTo || ["HACKATHONS", "STARTUPS"],
+      availabilityStatus: data.availabilityStatus || "AVAILABLE",
     };
 
     if (isSupabaseConfigured()) {
@@ -455,6 +515,8 @@ export class ProfileService {
         github_url: newProfile.githubUrl || null,
         portfolio_url: newProfile.portfolioUrl || null,
         linkedin_url: newProfile.linkedinUrl || null,
+        open_to: newProfile.openTo,
+        availability_status: newProfile.availabilityStatus,
       });
 
       if (profileError) {
@@ -541,6 +603,8 @@ export class ProfileService {
           github_url: profile.githubUrl?.trim() || null,
           portfolio_url: profile.portfolioUrl?.trim() || null,
           linkedin_url: profile.linkedinUrl?.trim() || null,
+          open_to: profile.openTo || ["HACKATHONS", "STARTUPS"],
+          availability_status: profile.availabilityStatus || "AVAILABLE",
         })
         .eq("id", profile.id);
 
@@ -563,7 +627,6 @@ export class ProfileService {
       }
 
       // Upsert custom skills into public.skills and public.user_skills
-      const activeSkillIds: string[] = [];
       for (const sk of profile.skills) {
         const skillName = sk.name.trim();
         if (!skillName) continue;
@@ -587,7 +650,6 @@ export class ProfileService {
         }
 
         if (skillId) {
-          activeSkillIds.push(skillId);
           await supabase.from("user_skills").upsert({
             user_id: profile.id,
             skill_id: skillId,

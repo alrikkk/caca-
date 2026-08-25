@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { MatchBreakdownModal } from "./MatchBreakdownModal";
+import { MissingRoleMatcherModal } from "./MissingRoleMatcherModal";
 import {
   Bookmark,
   Clock,
@@ -16,6 +17,7 @@ import {
   AlertTriangle,
   BarChart2,
   Check,
+  UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +32,8 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
 }) => {
   const { profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMatcherOpen, setIsMatcherOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<string>("");
   const [isApplied, setIsApplied] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -149,13 +153,26 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
             {project.description}
           </p>
 
-          {/* Missing Roles */}
+          {/* Missing Roles with 1-Click Candidate Matching */}
           {project.missingRoles && project.missingRoles.length > 0 && (
-            <div className="p-2 bg-red-50 border-hard-sm border-dashed border-red-500 flex items-center gap-2 text-xs font-mono">
-              <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-              <span className="font-bold text-red-700 uppercase">
-                MISSING: {project.missingRoles.join(" • ")}
-              </span>
+            <div className="p-2.5 bg-red-50 border-hard-sm border-dashed border-red-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                <span className="font-bold text-red-700 uppercase">
+                  MISSING: {project.missingRoles.join(" • ")}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRole(project.missingRoles?.[0] || "Squad Member");
+                  setIsMatcherOpen(true);
+                }}
+                className="px-2 py-1 bg-white hover:bg-ink hover:text-white border-hard-sm text-[10px] font-bold uppercase transition-colors shrink-0 flex items-center gap-1 shadow-hard-sm"
+              >
+                <UserPlus className="w-3 h-3" />
+                <span>FIND MATCHES →</span>
+              </button>
             </div>
           )}
 
@@ -232,6 +249,15 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
         project={project}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+      />
+
+      <MissingRoleMatcherModal
+        isOpen={isMatcherOpen}
+        onClose={() => setIsMatcherOpen(false)}
+        projectId={project.id}
+        projectName={project.title}
+        missingRole={selectedRole || project.missingRoles?.[0] || "Squad Member"}
+        requiredSkills={project.requiredSkills.map((r) => r.skill.name)}
       />
     </>
   );

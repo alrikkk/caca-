@@ -76,5 +76,7 @@ export interface StudentProfile {
   skills: UserSkill[];
   interests: Interest[];
   availability: Availability;
+  openTo?: string[];
+  availabilityStatus?: "AVAILABLE" | "LIMITED" | "NOT_LOOKING";
   created_at?: string;
 }
