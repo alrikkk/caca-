@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User } from "@supabase/supabase-js";
+import { User, Session } from "@supabase/supabase-js";
 import { createClient, isSupabaseConfigured } from "./supabase/client";
 import { StudentProfile } from "@/types/user";
 import { ProfileService } from "@/services/profile-service";
@@ -13,7 +13,7 @@ interface AuthContextType {
   isDemoMode: boolean;
   isLoading: boolean;
   signIn: (email: string, pass: string) => Promise<{ error?: string; hasProfile?: boolean }>;
-  signUp: (email: string, pass: string) => Promise<{ data?: any; error?: string }>;
+  signUp: (email: string, pass: string) => Promise<{ data?: any; needsEmailConfirmation?: boolean; error?: string }>;
   signOut: () => Promise<void>;
   enterDemoMode: () => void;
   setProfile: (p: StudentProfile) => void;
@@ -38,7 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (p) {
         setProfileState(p);
       } else {
-        // Fallback for authenticated user without completed profile
         setProfileState({
           id: user.id,
           email: user.email || "",
@@ -84,9 +83,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (isSupabaseConfigured()) {
           const supabase = createClient();
-          const { data: { user: authUser }, error: userError } = await supabase.auth.getUser();
+          const { data: { session } } = await supabase.auth.getSession();
+          const authUser = session?.user;
 
-          if (authUser && !userError) {
+          if (authUser) {
             setUser(authUser);
             setIsDemoMode(false);
             if (typeof window !== "undefined") {
@@ -120,7 +120,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
             }
           } else {
-            // No live Supabase user
             setUser(null);
             setProfileState(null);
           }
@@ -165,26 +164,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const p = await ProfileService.getCurrentProfile(authUser.id);
               if (p) {
                 setProfileState(p);
-              } else {
-                setProfileState({
-                  id: authUser.id,
-                  email: authUser.email || "",
-                  fullName: authUser.email?.split("@")[0] || "Student",
-                  college: "Unassigned College",
-                  major: "General",
-                  gradYear: 2027,
-                  experienceLevel: "sophomore",
-                  workingStyle: "collaborative",
-                  skills: [],
-                  interests: [],
-                  availability: {
-                    hoursPerWeek: 10,
-                    timezone: "UTC",
-                    prefersRemote: true,
-                    weekendAvailability: true,
-                    weekdayEvenings: true,
-                  },
-                });
               }
             } catch {
               // Handled
@@ -219,12 +198,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isSupabaseConfigured()) {
         const supabase = createClient();
         const { data, error } = await supabase.auth.signInWithPassword({
-          email,
+          email: email.trim(),
           password: pass,
         });
+
         if (error) {
+          if (error.message.toLowerCase().includes("email not confirmed")) {
+            return { error: "Email not confirmed. Please check your inbox and verify your email first." };
+          }
+          if (error.message.toLowerCase().includes("invalid login credentials")) {
+            return { error: "Invalid email or password. Please try again." };
+          }
           return { error: error.message };
         }
+
         loggedInUser = data.user;
         setUser(loggedInUser);
         setIsDemoMode(false);
@@ -298,13 +285,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isSupabaseConfigured()) {
         const supabase = createClient();
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: email.trim(),
           password: pass,
         });
+
         if (error) {
           return { error: error.message };
         }
-        setUser(data.user);
+
+        // If email confirmation is required by Supabase project settings
+        if (data.user && !data.session) {
+          return { needsEmailConfirmation: true, data };
+        }
+
+        if (data.user) {
+          setUser(data.user);
+        }
       } else {
         // Standalone account creation
         const newStudentUser: User = {
@@ -324,7 +320,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         document.cookie = "caca_demo_mode=; path=/; max-age=0";
         document.cookie = "caca_demo_session=; path=/; max-age=0";
       }
-      return {};
+      return { needsEmailConfirmation: false };
     } catch (err: any) {
       return { error: err?.message || "Failed to sign up" };
     } finally {

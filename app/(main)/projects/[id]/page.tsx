@@ -1,43 +1,57 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Project } from "@/types/project";
 import { ProjectService } from "@/services/project-service";
 import { ApplicationService } from "@/services/application-service";
+import { TeamService } from "@/services/team-service";
 import { useAuth } from "@/lib/auth-context";
 import { MOCK_STUDENTS } from "@/lib/mock-data";
 import { defaultMatchingEngine } from "@/matching/engine";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import {
   ArrowLeft,
   Check,
+  Plus,
+  Users,
 } from "lucide-react";
 
 export default function ProjectDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const projectId = params.id as string;
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
   const [isApplied, setIsApplied] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Team creation modal
+  const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
+  const [teamName, setTeamName] = useState("");
+  const [roleTitle, setRoleTitle] = useState("Squad Lead");
+  const [isCreatingSquad, setIsCreatingSquad] = useState(false);
+  const [squadError, setSquadError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       const p = await ProjectService.getProjectById(projectId, profile);
       setProject(p);
 
-      if (profile?.id) {
-        const applied = await ApplicationService.hasApplied(projectId, profile.id);
+      const userId = user?.id || profile?.id;
+      if (userId) {
+        const applied = await ApplicationService.hasApplied(projectId, userId);
         setIsApplied(applied);
       }
     };
     loadData();
-  }, [projectId, profile]);
+  }, [projectId, profile, user?.id]);
 
   if (!project) {
     return (
@@ -55,8 +69,9 @@ export default function ProjectDetailPage() {
   );
 
   const handleApply = async () => {
-    if (!profile) {
-      window.location.href = "/login";
+    const userId = user?.id || profile?.id;
+    if (!userId) {
+      router.push("/login");
       return;
     }
     if (isApplied) return;
@@ -64,12 +79,44 @@ export default function ProjectDetailPage() {
     setLoading(true);
     const res = await ApplicationService.applyToProject(
       project.id,
-      profile.id,
+      userId,
       project.matchScore ?? 85
     );
     setLoading(false);
     if (res.success) {
       setIsApplied(true);
+    }
+  };
+
+  const handleCreateSquad = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teamName.trim()) return;
+
+    const userId = user?.id || profile?.id;
+    if (!userId) {
+      router.push("/login");
+      return;
+    }
+
+    setIsCreatingSquad(true);
+    setSquadError(null);
+
+    const res = await TeamService.createTeam({
+      projectId: project.id,
+      projectName: project.title,
+      teamName: teamName.trim(),
+      creatorId: userId,
+      roleTitle: roleTitle.trim() || "Squad Lead",
+      compatibilityScore: project.matchScore ?? 90,
+    });
+
+    setIsCreatingSquad(false);
+
+    if (res.error) {
+      setSquadError(res.error);
+    } else {
+      setIsSquadModalOpen(false);
+      router.push("/teams");
     }
   };
 
@@ -144,7 +191,7 @@ export default function ProjectDetailPage() {
           </div>
 
           {/* Owner & Action */}
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
             <Link
               href={`/profile/${ownerId}`}
               className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
@@ -164,21 +211,34 @@ export default function ProjectDetailPage() {
               </div>
             </Link>
 
-            <Button
-              variant={isApplied ? "accent" : "primary"}
-              size="md"
-              onClick={handleApply}
-              isLoading={loading}
-              disabled={isApplied}
-            >
-              {isApplied ? (
-                <span className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5" /> APPLIED
-                </span>
-              ) : (
-                <span>JOIN</span>
-              )}
-            </Button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button
+                variant="accent"
+                size="md"
+                onClick={() => setIsSquadModalOpen(true)}
+                className="flex-1 sm:flex-initial text-xs flex items-center gap-1.5"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>CREATE SQUAD</span>
+              </Button>
+
+              <Button
+                variant={isApplied ? "accent" : "primary"}
+                size="md"
+                onClick={handleApply}
+                isLoading={loading}
+                disabled={isApplied}
+                className="flex-1 sm:flex-initial"
+              >
+                {isApplied ? (
+                  <span className="flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" /> APPLIED
+                  </span>
+                ) : (
+                  <span>JOIN</span>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -265,6 +325,61 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Create Squad Modal */}
+      <Modal
+        isOpen={isSquadModalOpen}
+        onClose={() => setIsSquadModalOpen(false)}
+        title="CREATE PROJECT SQUAD"
+      >
+        <form onSubmit={handleCreateSquad} className="space-y-4 font-mono text-xs">
+          <p className="text-ink-muted">
+            Create an official squad for <strong>{project.title}</strong> and become the founding lead.
+          </p>
+
+          <Input
+            label="SQUAD NAME"
+            placeholder="e.g. Core Engineering Alpha"
+            value={teamName}
+            onChange={(e) => setTeamName(e.target.value)}
+            required
+          />
+
+          <Input
+            label="YOUR SQUAD ROLE"
+            placeholder="e.g. Lead Architect, ML Lead"
+            value={roleTitle}
+            onChange={(e) => setRoleTitle(e.target.value)}
+            required
+          />
+
+          {squadError && (
+            <div className="p-2.5 bg-red-50 border-hard-sm border-red-500 text-red-600 font-bold uppercase">
+              {squadError}
+            </div>
+          )}
+
+          <div className="pt-2 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSquadModalOpen(false)}
+            >
+              CANCEL
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              isLoading={isCreatingSquad}
+              disabled={isCreatingSquad || !teamName.trim()}
+            >
+              <span>CREATE SQUAD</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

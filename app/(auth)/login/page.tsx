@@ -18,6 +18,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // Prevent double submit
     setLoading(true);
     setError(null);
 
@@ -79,6 +80,7 @@ export default function LoginPage() {
             placeholder="student@university.edu"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={loading}
             required
           />
 
@@ -88,11 +90,12 @@ export default function LoginPage() {
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={loading}
             required
           />
 
           {error && (
-            <div className="p-2.5 bg-red-50 border-hard-sm border-red-500 text-xs font-mono font-bold uppercase text-red-600">
+            <div className="p-2.5 bg-red-50 border-hard-sm border-red-500 text-xs font-mono font-bold uppercase text-red-600 leading-snug">
               {error}
             </div>
           )}
@@ -103,6 +106,7 @@ export default function LoginPage() {
             size="md"
             className="w-full"
             isLoading={loading}
+            disabled={loading}
           >
             <span>LOG IN</span>
           </Button>
