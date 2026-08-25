@@ -84,12 +84,47 @@ export class InvitationService {
       try {
         const supabase = createClient();
         const projUuid = toProjectUuid(params.projectId);
+        let effectiveTeamId = params.teamId;
+
+        // If teamId is not a valid UUID format, look up the team for this project or create one
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveTeamId);
+        if (!isUuid) {
+          const { data: existingTeam } = await supabase
+            .from("teams")
+            .select("id")
+            .eq("project_id", projUuid)
+            .maybeSingle();
+
+          if (existingTeam?.id) {
+            effectiveTeamId = existingTeam.id;
+          } else {
+            const { data: createdTeam } = await supabase
+              .from("teams")
+              .insert({
+                project_id: projUuid,
+                name: teamName,
+                team_compatibility_score: 90,
+              })
+              .select("id")
+              .maybeSingle();
+
+            if (createdTeam?.id) {
+              effectiveTeamId = createdTeam.id;
+              await supabase.from("team_members").insert({
+                team_id: createdTeam.id,
+                user_id: params.inviterId,
+                role_title: "Squad Lead",
+                is_lead: true,
+              });
+            }
+          }
+        }
 
         // Check if an invitation already exists
         const { data: existing, error: queryError } = await supabase
           .from("team_invitations")
           .select("id, status")
-          .eq("team_id", params.teamId)
+          .eq("team_id", effectiveTeamId)
           .eq("invitee_id", params.inviteeId)
           .maybeSingle();
 
@@ -109,7 +144,7 @@ export class InvitationService {
         const { error: insertError } = await supabase
           .from("team_invitations")
           .insert({
-            team_id: params.teamId,
+            team_id: effectiveTeamId,
             project_id: projUuid,
             inviter_id: params.inviterId,
             invitee_id: params.inviteeId,
@@ -119,12 +154,11 @@ export class InvitationService {
 
         if (insertError) {
           console.error("Supabase team_invitations insert error:", insertError);
-          return { success: false, error: insertError.message };
+          return { success: false, error: "Couldn't send invitation right now, please try again." };
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         console.error("InvitationService.sendInvitation exception:", err);
-        return { success: false, error: msg || "Failed to send invitation." };
+        return { success: false, error: "Couldn't send invitation right now, please try again." };
       }
     }
 

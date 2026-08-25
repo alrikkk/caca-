@@ -97,6 +97,7 @@ export class TeamService {
         }
 
         if (teamData?.id) {
+          newTeam.id = teamData.id;
           const { error: memberError } = await supabase.from("team_members").insert({
             team_id: teamData.id,
             user_id: params.creatorId,
