@@ -50,7 +50,15 @@ interface AuthContextType {
   isLoading: boolean;
   isDemoMode: boolean;
   signIn: (email: string, pass: string) => Promise<{ error?: string; hasProfile?: boolean }>;
-  signUp: (email: string, pass: string) => Promise<{ error?: string; data?: any; isExistingUser?: boolean; hasProfile?: boolean }>;
+  signUp: (
+    email: string,
+    pass: string
+  ) => Promise<{
+    error?: string;
+    data?: { user: User | null; session: Session | null } | null;
+    isExistingUser?: boolean;
+    hasProfile?: boolean;
+  }>;
   signOut: () => Promise<void>;
   enterDemoMode: () => void;
   exitDemoMode: () => void;
@@ -123,8 +131,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 });
               }
             })
-            .catch(() => {
-              // Ignore hydration errors
+            .catch((err) => {
+              console.error("AuthContext.initAuth (profile hydration) failed:", err);
             });
 
           setIsLoading(false);
@@ -152,8 +160,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setIsLoading(false);
               return;
             }
-          } catch {
-            // Ignored
+          } catch (err) {
+            console.error("AuthContext.initAuth (local parse) failed:", err);
           }
         }
       }
@@ -163,7 +171,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setProfileState(null);
       setIsDemoMode(false);
-    } catch {
+    } catch (err) {
+      console.error("AuthContext.initAuth failed:", err);
       setUser(null);
       setProfileState(null);
     } finally {
@@ -265,7 +274,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
             hasProfile = false;
           }
-        } catch {
+        } catch (err) {
+          console.error("AuthContext.signIn (profile hydration) failed:", err);
           hasProfile = false;
         }
       } else {
@@ -288,8 +298,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setIsDemoMode(false);
       return { hasProfile };
-    } catch (err: any) {
-      return { error: formatAuthError(err?.message || "Failed to log in") };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("AuthContext.signIn failed:", err);
+      return { error: formatAuthError(message || "Failed to log in") };
     } finally {
       setIsLoading(false);
     }
@@ -360,8 +372,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsDemoMode(false);
         return { data: { user: newStudentUser, session: null } };
       }
-    } catch (err: any) {
-      return { error: formatAuthError(err?.message || "Failed to create account") };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("AuthContext.signUp failed:", err);
+      return { error: formatAuthError(message || "Failed to create account") };
     } finally {
       setIsLoading(false);
     }

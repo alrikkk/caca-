@@ -1,5 +1,5 @@
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { StudentProfile, UserSkill, Availability, WorkingStyle, ExperienceLevel } from "@/types/user";
+import { StudentProfile, UserSkill, Availability, WorkingStyle, ExperienceLevel, TimeWindow } from "@/types/user";
 import { CURRENT_USER, MOCK_STUDENTS } from "@/lib/mock-data";
 
 const LOCAL_STORAGE_PROFILE_KEY = "caca_active_profile";
@@ -24,9 +24,51 @@ export interface OnboardingData {
   availabilityStatus?: "AVAILABLE" | "LIMITED" | "NOT_LOOKING";
 }
 
+interface UserSkillJoinRow {
+  proficiency: number;
+  years_experience: number;
+  verified: boolean;
+  skills: { id: string; name: string; category: string } | null;
+}
+
+interface UserInterestJoinRow {
+  interests: { id: string; name: string; category: string } | null;
+}
+
+interface AvailabilityJoinRow {
+  hours_per_week?: number | null;
+  timezone?: string | null;
+  prefers_remote?: boolean | null;
+  weekend_availability?: boolean | null;
+  weekday_evenings?: boolean | null;
+  schedule_windows?: TimeWindow[] | null;
+}
+
+interface SearchProfileJoinRow {
+  id: string;
+  full_name: string;
+  headline: string | null;
+  college: string;
+  major: string;
+  grad_year: number;
+  experience_level: "freshman" | "sophomore" | "junior" | "senior" | "grad" | "alumni";
+  working_style: "collaborative" | "independent" | "mentor_seeking" | "mentor_offering" | null;
+  bio: string | null;
+  avatar_url: string | null;
+  linkedin_url: string | null;
+  github_url: string | null;
+  portfolio_url: string | null;
+  open_to: string[] | null;
+  availability_status: "AVAILABLE" | "LIMITED" | "NOT_LOOKING" | null;
+  user_skills: Array<{
+    proficiency: number;
+    skills: { name: string } | null;
+  }> | null;
+}
+
 export class ProfileService {
   /**
-   * Fetches the current logged in user's profile from Supabase or active local session
+   * Fetches the current user profile from Supabase with full relational joins
    */
   static async getCurrentProfile(userId?: string): Promise<StudentProfile | null> {
     if (typeof window !== "undefined") {
@@ -42,7 +84,8 @@ export class ProfileService {
         if (stored) {
           try {
             return JSON.parse(stored);
-          } catch {
+          } catch (err) {
+            console.error("ProfileService.getCurrentProfile (local parse) failed:", err);
             return null;
           }
         }
@@ -78,14 +121,23 @@ export class ProfileService {
         .maybeSingle();
 
       if (error || !profileData) {
+        if (error) {
+          console.error("ProfileService.getCurrentProfile query error:", error);
+        }
         if (typeof window !== "undefined") {
           const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
-          if (stored) return JSON.parse(stored);
+          if (stored) {
+            try {
+              return JSON.parse(stored);
+            } catch (err) {
+              console.error("ProfileService.getCurrentProfile fallback parse failed:", err);
+            }
+          }
         }
         return null;
       }
 
-      const skills: UserSkill[] = (profileData.user_skills || []).map((us: any) => ({
+      const skills: UserSkill[] = ((profileData.user_skills as unknown as UserSkillJoinRow[]) || []).map((us) => ({
         id: us.skills?.id || `sk_${Math.random()}`,
         name: us.skills?.name || "Skill",
         category: us.skills?.category || "general",
@@ -94,13 +146,13 @@ export class ProfileService {
         verified: Boolean(us.verified),
       }));
 
-      const interests = (profileData.user_interests || []).map((ui: any) => ({
+      const interests = ((profileData.user_interests as unknown as UserInterestJoinRow[]) || []).map((ui) => ({
         id: ui.interests?.id || `int_${Math.random()}`,
         name: ui.interests?.name || "Interest",
         category: ui.interests?.category || "general",
       }));
 
-      const rawAvail = profileData.availability?.[0];
+      const rawAvail = (profileData.availability as unknown as AvailabilityJoinRow[])?.[0];
       const avail: Availability = rawAvail
         ? {
             hoursPerWeek: rawAvail.hours_per_week ?? 10,
@@ -182,8 +234,8 @@ export class ProfileService {
               phoneNumber: undefined,
             };
           }
-        } catch {
-          // Ignored
+        } catch (err) {
+          console.error("ProfileService.getProfileById (local parse) failed:", err);
         }
       }
     }
@@ -230,8 +282,10 @@ export class ProfileService {
           .eq("id", userId)
           .maybeSingle();
 
-        if (!error && profileData) {
-          const skills: UserSkill[] = (profileData.user_skills || []).map((us: any) => ({
+        if (error) {
+          console.error("ProfileService.getProfileById query error:", error);
+        } else if (profileData) {
+          const skills: UserSkill[] = ((profileData.user_skills as unknown as UserSkillJoinRow[]) || []).map((us) => ({
             id: us.skills?.id || `sk_${Math.random()}`,
             name: us.skills?.name || "Skill",
             category: us.skills?.category || "general",
@@ -240,13 +294,13 @@ export class ProfileService {
             verified: Boolean(us.verified),
           }));
 
-          const interests = (profileData.user_interests || []).map((ui: any) => ({
+          const interests = ((profileData.user_interests as unknown as UserInterestJoinRow[]) || []).map((ui) => ({
             id: ui.interests?.id || `int_${Math.random()}`,
             name: ui.interests?.name || "Interest",
             category: ui.interests?.category || "general",
           }));
 
-          const rawAvail = profileData.availability?.[0];
+          const rawAvail = (profileData.availability as unknown as AvailabilityJoinRow[])?.[0];
           const avail: Availability = rawAvail
             ? {
                 hoursPerWeek: rawAvail.hours_per_week ?? 10,
@@ -289,7 +343,7 @@ export class ProfileService {
           };
         }
       } catch (err) {
-        console.error("getProfileById error:", err);
+        console.error("ProfileService.getProfileById exception:", err);
       }
     }
 
@@ -385,24 +439,25 @@ export class ProfileService {
         const { data, error } = await queryBuilder.limit(20);
 
         if (!error && data && data.length > 0) {
-          return data.map((p: any) => ({
+          const typedData = data as unknown as SearchProfileJoinRow[];
+          return typedData.map((p) => ({
             id: p.id,
             email: "",
             fullName: p.full_name,
-            headline: p.headline,
+            headline: p.headline || undefined,
             college: p.college,
             major: p.major,
             gradYear: p.grad_year,
             experienceLevel: p.experience_level,
-            workingStyle: p.working_style || "collaborative",
+            workingStyle: (p.working_style as StudentProfile["workingStyle"]) || "collaborative",
             bio: p.bio || undefined,
             avatarUrl: p.avatar_url || undefined,
             linkedinUrl: p.linkedin_url || undefined,
             githubUrl: p.github_url || undefined,
             portfolioUrl: p.portfolio_url || undefined,
             openTo: p.open_to || ["HACKATHONS", "STARTUPS"],
-            availabilityStatus: p.availability_status || "AVAILABLE",
-            skills: (p.user_skills || []).map((us: any) => ({
+            availabilityStatus: (p.availability_status as StudentProfile["availabilityStatus"]) || "AVAILABLE",
+            skills: (p.user_skills || []).map((us) => ({
               id: `sk_${Math.random()}`,
               name: us.skills?.name || "Skill",
               category: "general",
@@ -723,16 +778,17 @@ export class ProfileService {
               const parsed = JSON.parse(stored);
               parsed.avatarUrl = publicUrl;
               localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-            } catch {
-              // Ignore parse errors
+            } catch (err) {
+              console.error("ProfileService.uploadAndSaveAvatar (local cache update) failed:", err);
             }
           }
         }
 
         return { url: publicUrl };
-      } catch (err: any) {
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         console.error("Storage upload exception:", err);
-        return { error: err?.message || "An unexpected error occurred while saving the avatar." };
+        return { error: msg || "An unexpected error occurred while saving the avatar." };
       }
     }
 
@@ -748,7 +804,9 @@ export class ProfileService {
               const parsed = JSON.parse(stored);
               parsed.avatarUrl = base64;
               localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-            } catch {}
+            } catch (err) {
+              console.error("ProfileService.uploadAndSaveAvatar (fallback parse) failed:", err);
+            }
           }
         }
         resolve({ url: base64 });
@@ -784,9 +842,10 @@ export class ProfileService {
           console.error("Failed to remove avatar from database:", dbError);
           return { success: false, error: dbError.message };
         }
-      } catch (err: any) {
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         console.error("removeAvatar exception:", err);
-        return { success: false, error: err?.message };
+        return { success: false, error: msg };
       }
     }
 
@@ -797,7 +856,9 @@ export class ProfileService {
           const parsed = JSON.parse(stored);
           parsed.avatarUrl = undefined;
           localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-        } catch {}
+        } catch (err) {
+          console.error("ProfileService.removeAvatar (local cache update) failed:", err);
+        }
       }
     }
 

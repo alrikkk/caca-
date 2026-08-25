@@ -20,10 +20,13 @@ export interface Database {
           grad_year: number;
           experience_level: 'freshman' | 'sophomore' | 'junior' | 'senior' | 'grad' | 'alumni';
           bio: string | null;
+          phone_number: string | null;
           avatar_url: string | null;
           github_url: string | null;
           portfolio_url: string | null;
           linkedin_url: string | null;
+          open_to: string[] | null;
+          availability_status: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -37,10 +40,13 @@ export interface Database {
           grad_year: number;
           experience_level: 'freshman' | 'sophomore' | 'junior' | 'senior' | 'grad' | 'alumni';
           bio?: string | null;
+          phone_number?: string | null;
           avatar_url?: string | null;
           github_url?: string | null;
           portfolio_url?: string | null;
           linkedin_url?: string | null;
+          open_to?: string[] | null;
+          availability_status?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -253,6 +259,54 @@ export interface Database {
           joined_at?: string;
         };
         Update: Partial<Database['public']['Tables']['team_members']['Insert']>;
+      };
+      team_invitations: {
+        Row: {
+          id: string;
+          team_id: string;
+          project_id: string;
+          inviter_id: string;
+          invitee_id: string;
+          role_title: string;
+          status: 'pending' | 'accepted' | 'declined';
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          project_id: string;
+          inviter_id: string;
+          invitee_id: string;
+          role_title?: string;
+          status?: 'pending' | 'accepted' | 'declined';
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['team_invitations']['Insert']>;
+      };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          message: string;
+          type: 'invitation' | 'application_status' | 'info';
+          link: string | null;
+          metadata: Json;
+          read: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          message: string;
+          type?: 'invitation' | 'application_status' | 'info';
+          link?: string | null;
+          metadata?: Json;
+          read?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['notifications']['Insert']>;
       };
     };
   };

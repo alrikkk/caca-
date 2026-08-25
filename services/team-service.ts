@@ -26,6 +26,20 @@ export interface TeamRecord {
   createdAt: string;
 }
 
+interface TeamMemberQueryResult {
+  id: string;
+  role_title: string;
+  is_lead: boolean;
+  teams: {
+    id: string;
+    name: string;
+    project_id: string;
+    team_compatibility_score: number | null;
+    created_at: string;
+    projects: { title: string; max_team_size: number } | null;
+  } | null;
+}
+
 export class TeamService {
   /**
    * Creates a new team for a project with the creator as the lead member
@@ -78,7 +92,7 @@ export class TeamService {
           .maybeSingle();
 
         if (teamError) {
-          console.error("Supabase team insert error:", teamError);
+          console.error("TeamService.createTeam insert error:", teamError);
           return { success: false, error: teamError.message || "Failed to create team in database." };
         }
 
@@ -91,23 +105,28 @@ export class TeamService {
           });
 
           if (memberError) {
-            console.error("Supabase team member insert error:", memberError);
+            console.error("TeamService.createTeam member insert error:", memberError);
             return { success: false, error: memberError.message || "Failed to add user to team." };
           }
         }
-      } catch (err: any) {
-        console.error("Database team creation exception:", err);
-        return { success: false, error: err?.message || "Failed to create squad." };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("TeamService.createTeam exception:", err);
+        return { success: false, error: msg || "Failed to create squad." };
       }
     }
 
     // Save in local storage cache
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(LOCAL_TEAMS_KEY);
-      let list: TeamRecord[] = stored ? JSON.parse(stored) : [];
-      if (!list.some((t) => t.projectId === params.projectId && t.name === newTeam.name)) {
-        list.push(newTeam);
-        localStorage.setItem(LOCAL_TEAMS_KEY, JSON.stringify(list));
+      try {
+        const stored = localStorage.getItem(LOCAL_TEAMS_KEY);
+        let list: TeamRecord[] = stored ? JSON.parse(stored) : [];
+        if (!list.some((t) => t.projectId === params.projectId && t.name === newTeam.name)) {
+          list.push(newTeam);
+          localStorage.setItem(LOCAL_TEAMS_KEY, JSON.stringify(list));
+        }
+      } catch (err) {
+        console.error("TeamService.createTeam (local save) failed:", err);
       }
     }
 
@@ -126,7 +145,8 @@ export class TeamService {
       if (stored) {
         try {
           localTeams = JSON.parse(stored);
-        } catch {
+        } catch (err) {
+          console.error("TeamService.getMyTeams (local parse) failed:", err);
           localTeams = [];
         }
       }
@@ -152,10 +172,13 @@ export class TeamService {
           `)
           .eq("user_id", userId);
 
-        if (!error && memberRows && memberRows.length > 0) {
-          const dbTeams: TeamRecord[] = memberRows
-            .filter((m: any) => m.teams)
-            .map((m: any) => {
+        if (error) {
+          console.error("TeamService.getMyTeams query error:", error);
+        } else if (memberRows && memberRows.length > 0) {
+          const typedMembers = memberRows as unknown as TeamMemberQueryResult[];
+          const dbTeams: TeamRecord[] = typedMembers
+            .filter((m): m is TeamMemberQueryResult & { teams: NonNullable<TeamMemberQueryResult["teams"]> } => Boolean(m.teams))
+            .map((m) => {
               const rawProjId = m.teams.project_id;
               const matchedMock = MOCK_PROJECTS.find(
                 (p) => p.id === rawProjId || toProjectUuid(p.id) === rawProjId
@@ -179,7 +202,7 @@ export class TeamService {
           return [...dbTeams, ...filteredLocal];
         }
       } catch (err) {
-        console.error("getMyTeams error:", err);
+        console.error("TeamService.getMyTeams failed:", err);
       }
     }
 

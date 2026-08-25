@@ -1,4 +1,5 @@
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { Database } from "@/types/database.types";
 
 export interface NotificationRecord {
   id: string;
@@ -10,6 +11,8 @@ export interface NotificationRecord {
   read: boolean;
   createdAt: string;
 }
+
+type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
 
 const LOCAL_NOTIFS_KEY = "caca_user_notifications";
 
@@ -26,7 +29,8 @@ export class NotificationService {
       if (stored) {
         try {
           localNotifs = JSON.parse(stored);
-        } catch {
+        } catch (err) {
+          console.error("NotificationService.getNotifications (local parse) failed:", err);
           localNotifs = [];
         }
       }
@@ -42,8 +46,10 @@ export class NotificationService {
           .order("created_at", { ascending: false })
           .limit(20);
 
-        if (!error && data) {
-          const dbNotifs: NotificationRecord[] = data.map((n: any) => ({
+        if (error) {
+          console.error("NotificationService.getNotifications query error:", error);
+        } else if (data) {
+          const dbNotifs: NotificationRecord[] = (data as NotificationRow[]).map((n) => ({
             id: n.id,
             userId: n.user_id,
             title: n.title,
@@ -59,7 +65,7 @@ export class NotificationService {
           return [...dbNotifs, ...remainingLocal];
         }
       } catch (err) {
-        console.error("getNotifications exception:", err);
+        console.error("NotificationService.getNotifications exception:", err);
       }
     }
 
@@ -90,7 +96,7 @@ export class NotificationService {
     if (isSupabaseConfigured()) {
       try {
         const supabase = createClient();
-        await supabase.from("notifications").insert({
+        const { error } = await supabase.from("notifications").insert({
           user_id: params.userId,
           title: params.title,
           message: params.message,
@@ -98,16 +104,24 @@ export class NotificationService {
           link: params.link || null,
           read: false,
         });
+
+        if (error) {
+          console.error("NotificationService.createNotification query error:", error);
+        }
       } catch (err) {
-        console.error("createNotification supabase exception:", err);
+        console.error("NotificationService.createNotification exception:", err);
       }
     }
 
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(LOCAL_NOTIFS_KEY);
-      let list: NotificationRecord[] = stored ? JSON.parse(stored) : [];
-      list.unshift(newNotif);
-      localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(list.slice(0, 30)));
+      try {
+        const stored = localStorage.getItem(LOCAL_NOTIFS_KEY);
+        let list: NotificationRecord[] = stored ? JSON.parse(stored) : [];
+        list.unshift(newNotif);
+        localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(list.slice(0, 30)));
+      } catch (err) {
+        console.error("NotificationService.createNotification (local save) failed:", err);
+      }
     }
   }
 
@@ -118,12 +132,16 @@ export class NotificationService {
     if (isSupabaseConfigured()) {
       try {
         const supabase = createClient();
-        await supabase
+        const { error } = await supabase
           .from("notifications")
           .update({ read: true })
           .eq("id", notificationId);
+
+        if (error) {
+          console.error("NotificationService.markAsRead error:", error);
+        }
       } catch (err) {
-        console.error("markAsRead error:", err);
+        console.error("NotificationService.markAsRead exception:", err);
       }
     }
 
@@ -136,7 +154,9 @@ export class NotificationService {
             n.id === notificationId ? { ...n, read: true } : n
           );
           localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(updated));
-        } catch {}
+        } catch (err) {
+          console.error("NotificationService.markAsRead (local update) failed:", err);
+        }
       }
     }
   }

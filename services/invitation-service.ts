@@ -16,6 +16,20 @@ export interface TeamInvitation {
   createdAt: string;
 }
 
+interface TeamInvitationQueryResult {
+  id: string;
+  team_id: string;
+  project_id: string;
+  inviter_id: string;
+  invitee_id: string;
+  role_title: string;
+  status: "pending" | "accepted" | "declined";
+  created_at: string;
+  teams: { id: string; name: string } | null;
+  projects: { id: string; title: string } | null;
+  profiles: { full_name: string } | null;
+}
+
 const LOCAL_INVITES_KEY = "caca_user_invitations";
 
 function toProjectUuid(id: string): string {
@@ -72,12 +86,16 @@ export class InvitationService {
         const projUuid = toProjectUuid(params.projectId);
 
         // Check if an invitation already exists
-        const { data: existing } = await supabase
+        const { data: existing, error: queryError } = await supabase
           .from("team_invitations")
           .select("id, status")
           .eq("team_id", params.teamId)
           .eq("invitee_id", params.inviteeId)
           .maybeSingle();
+
+        if (queryError) {
+          console.error("Supabase team_invitations query error:", queryError);
+        }
 
         if (existing) {
           if (existing.status === "pending") {
@@ -103,19 +121,24 @@ export class InvitationService {
           console.error("Supabase team_invitations insert error:", insertError);
           return { success: false, error: insertError.message };
         }
-      } catch (err: any) {
-        console.error("sendInvitation exception:", err);
-        return { success: false, error: err?.message || "Failed to send invitation." };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("InvitationService.sendInvitation exception:", err);
+        return { success: false, error: msg || "Failed to send invitation." };
       }
     }
 
     // Save in local cache
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(LOCAL_INVITES_KEY);
-      let list: TeamInvitation[] = stored ? JSON.parse(stored) : [];
-      if (!list.some((i) => i.teamId === params.teamId && i.inviteeId === params.inviteeId)) {
-        list.push(inviteRecord);
-        localStorage.setItem(LOCAL_INVITES_KEY, JSON.stringify(list));
+      try {
+        const stored = localStorage.getItem(LOCAL_INVITES_KEY);
+        let list: TeamInvitation[] = stored ? JSON.parse(stored) : [];
+        if (!list.some((i) => i.teamId === params.teamId && i.inviteeId === params.inviteeId)) {
+          list.push(inviteRecord);
+          localStorage.setItem(LOCAL_INVITES_KEY, JSON.stringify(list));
+        }
+      } catch (err) {
+        console.error("InvitationService.sendInvitation (local cache) failed:", err);
       }
     }
 
@@ -143,7 +166,8 @@ export class InvitationService {
       if (stored) {
         try {
           localInvites = JSON.parse(stored).filter((i: TeamInvitation) => i.inviteeId === userId);
-        } catch {
+        } catch (err) {
+          console.error("InvitationService.getMyInvitations (local parse) failed:", err);
           localInvites = [];
         }
       }
@@ -170,8 +194,10 @@ export class InvitationService {
           .eq("invitee_id", userId)
           .order("created_at", { ascending: false });
 
-        if (!error && data) {
-          const dbInvites: TeamInvitation[] = data.map((inv: any) => ({
+        if (error) {
+          console.error("InvitationService.getMyInvitations query error:", error);
+        } else if (data) {
+          const dbInvites: TeamInvitation[] = (data as unknown as TeamInvitationQueryResult[]).map((inv) => ({
             id: inv.id,
             teamId: inv.team_id,
             teamName: inv.teams?.name || "Squad",
@@ -190,7 +216,7 @@ export class InvitationService {
           return [...dbInvites, ...remainingLocal];
         }
       } catch (err) {
-        console.error("getMyInvitations error:", err);
+        console.error("InvitationService.getMyInvitations exception:", err);
       }
     }
 
@@ -218,6 +244,7 @@ export class InvitationService {
           .maybeSingle();
 
         if (fetchErr || !invData) {
+          console.error("InvitationService.respondToInvitation fetch error:", fetchErr);
           return { success: false, error: "Invitation not found." };
         }
 
@@ -228,17 +255,22 @@ export class InvitationService {
           .eq("id", invitationId);
 
         if (updateErr) {
+          console.error("InvitationService.respondToInvitation update error:", updateErr);
           return { success: false, error: updateErr.message };
         }
 
         // 3. If accepted, insert into team_members
         if (action === "accepted") {
-          await supabase.from("team_members").insert({
+          const { error: memberInsertErr } = await supabase.from("team_members").insert({
             team_id: invData.team_id,
             user_id: userId,
             role_title: invData.role_title || "Member",
             is_lead: false,
           });
+
+          if (memberInsertErr) {
+            console.error("InvitationService.respondToInvitation member insert error:", memberInsertErr);
+          }
 
           // Notify squad lead
           await NotificationService.createNotification({
@@ -249,9 +281,10 @@ export class InvitationService {
             link: "/teams",
           });
         }
-      } catch (err: any) {
-        console.error("respondToInvitation exception:", err);
-        return { success: false, error: err?.message || "Failed to process invitation." };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("InvitationService.respondToInvitation exception:", err);
+        return { success: false, error: msg || "Failed to process invitation." };
       }
     }
 
@@ -264,7 +297,9 @@ export class InvitationService {
             i.id === invitationId ? { ...i, status: action } : i
           );
           localStorage.setItem(LOCAL_INVITES_KEY, JSON.stringify(updated));
-        } catch {}
+        } catch (err) {
+          console.error("InvitationService.respondToInvitation (local update) failed:", err);
+        }
       }
     }
 
