@@ -7,6 +7,42 @@ import { CURRENT_USER } from "./mock-data";
 import { ProfileService } from "@/services/profile-service";
 import type { User, Session } from "@supabase/supabase-js";
 
+export function formatAuthError(errMessage: string): string {
+  const lower = (errMessage || "").toLowerCase();
+  if (
+    lower.includes("rate limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("over_email_send_rate_limit") ||
+    lower.includes("rate_limit_exceeded")
+  ) {
+    return "TOO MANY ATTEMPTS. Please wait a little before trying again.";
+  }
+  if (
+    lower.includes("invalid login credentials") ||
+    lower.includes("invalid username or password") ||
+    lower.includes("invalid_grant")
+  ) {
+    return "INVALID EMAIL OR PASSWORD. Please check your credentials or create an account.";
+  }
+  if (
+    lower.includes("user already registered") ||
+    lower.includes("already registered") ||
+    lower.includes("already in use")
+  ) {
+    return "ACCOUNT ALREADY EXISTS. Please enter your password to log in.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "EMAIL NOT CONFIRMED. Please verify your email or sign in.";
+  }
+  if (lower.includes("password should be at least")) {
+    return "PASSWORD TOO SHORT. Must be at least 6 characters.";
+  }
+  if (lower.includes("network") || lower.includes("failed to fetch")) {
+    return "NETWORK CONNECTION ISSUE. Please check your connection and try again.";
+  }
+  return errMessage;
+}
+
 interface AuthContextType {
   user: User | null;
   profile: StudentProfile | null;
@@ -88,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             })
             .catch(() => {
-              // Ignore profile hydration error
+              // Ignore hydration errors
             });
 
           setIsLoading(false);
@@ -188,10 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (error) {
-          if (error.message.toLowerCase().includes("invalid login credentials")) {
-            return { error: "Invalid email or password. Please check your credentials or create an account." };
-          }
-          return { error: error.message };
+          return { error: formatAuthError(error.message) };
         }
 
         loggedInUser = data.user;
@@ -256,7 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsDemoMode(false);
       return { hasProfile };
     } catch (err: any) {
-      return { error: err?.message || "Failed to log in" };
+      return { error: formatAuthError(err?.message || "Failed to log in") };
     } finally {
       setIsLoading(false);
     }
@@ -273,7 +306,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (error) {
-          return { error: error.message };
+          return { error: formatAuthError(error.message) };
         }
 
         // If user already exists in auth.users, try direct login with the given password
@@ -290,7 +323,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (p) setProfileState(p);
             return { data: signInRes.data, isExistingUser: true, hasProfile: Boolean(p) };
           }
-          return { error: "An account with this email already exists. Please enter your password to log in." };
+          return { error: "ACCOUNT ALREADY EXISTS. Please enter your password to log in." };
         }
 
         if (data.user) {
@@ -321,7 +354,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { data: { user: newStudentUser, session: null } };
       }
     } catch (err: any) {
-      return { error: err?.message || "Failed to create account" };
+      return { error: formatAuthError(err?.message || "Failed to create account") };
     } finally {
       setIsLoading(false);
     }
