@@ -68,6 +68,7 @@ export interface StudentProfile {
   experienceLevel: ExperienceLevel;
   workingStyle: WorkingStyle;
   bio?: string;
+  phoneNumber?: string;
   avatarUrl?: string;
   githubUrl?: string;
   portfolioUrl?: string;

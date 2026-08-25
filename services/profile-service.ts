@@ -13,6 +13,7 @@ export interface OnboardingData {
   experienceLevel: ExperienceLevel;
   workingStyle: WorkingStyle;
   bio?: string;
+  phoneNumber?: string;
   avatarUrl?: string;
   githubUrl?: string;
   portfolioUrl?: string;
@@ -49,7 +50,6 @@ export class ProfileService {
 
     try {
       const supabase = createClient();
-      // Fast single row query with maybeSingle to never throw on missing profile
       const { data: profileData, error } = await supabase
         .from("profiles")
         .select(`
@@ -128,6 +128,7 @@ export class ProfileService {
         experienceLevel: profileData.experience_level,
         workingStyle: profileData.working_style || "collaborative",
         bio: profileData.bio || undefined,
+        phoneNumber: profileData.phone_number || undefined,
         avatarUrl: profileData.avatar_url || undefined,
         githubUrl: profileData.github_url || undefined,
         portfolioUrl: profileData.portfolio_url || undefined,
@@ -190,6 +191,7 @@ export class ProfileService {
             experience_level,
             working_style,
             bio,
+            phone_number,
             avatar_url,
             github_url,
             portfolio_url,
@@ -261,6 +263,7 @@ export class ProfileService {
             experienceLevel: profileData.experience_level,
             workingStyle: profileData.working_style || "collaborative",
             bio: profileData.bio || undefined,
+            phoneNumber: profileData.phone_number || undefined,
             avatarUrl: profileData.avatar_url || undefined,
             githubUrl: profileData.github_url || undefined,
             portfolioUrl: profileData.portfolio_url || undefined,
@@ -296,6 +299,7 @@ export class ProfileService {
       experienceLevel: data.experienceLevel,
       workingStyle: data.workingStyle,
       bio: data.bio || undefined,
+      phoneNumber: data.phoneNumber || undefined,
       avatarUrl: data.avatarUrl || undefined,
       githubUrl: data.githubUrl || undefined,
       portfolioUrl: data.portfolioUrl || undefined,
@@ -331,6 +335,7 @@ export class ProfileService {
           experience_level: data.experienceLevel,
           working_style: data.workingStyle,
           bio: data.bio || null,
+          phone_number: data.phoneNumber || null,
           avatar_url: data.avatarUrl || null,
           github_url: data.githubUrl || null,
           portfolio_url: data.portfolioUrl || null,
@@ -374,6 +379,7 @@ export class ProfileService {
         await supabase.from("profiles").update({
           full_name: profile.fullName,
           bio: profile.bio || null,
+          phone_number: profile.phoneNumber || null,
           avatar_url: profile.avatarUrl || null,
           working_style: profile.workingStyle,
           github_url: profile.githubUrl || null,
@@ -381,9 +387,14 @@ export class ProfileService {
           linkedin_url: profile.linkedinUrl || null,
         }).eq("id", profile.id);
 
-        await supabase.from("availability").update({
+        await supabase.from("availability").upsert({
+          user_id: profile.id,
           hours_per_week: profile.availability.hoursPerWeek,
-        }).eq("user_id", profile.id);
+          timezone: profile.availability.timezone || "UTC",
+          prefers_remote: profile.availability.prefersRemote,
+          weekend_availability: profile.availability.weekendAvailability,
+          weekday_evenings: profile.availability.weekdayEvenings,
+        });
       } catch {
         // Fallback
       }

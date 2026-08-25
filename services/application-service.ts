@@ -85,7 +85,7 @@ export class ApplicationService {
           pitch_note: pitchNote || null,
         });
       } catch {
-        // Handled
+        // Handled via local storage fallback
       }
     }
 
@@ -109,6 +109,44 @@ export class ApplicationService {
         } catch {
           localApps = [];
         }
+      }
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data: dbApps, error } = await supabase
+          .from("applications")
+          .select(`
+            id,
+            project_id,
+            applicant_id,
+            status,
+            compatibility_score,
+            pitch_note,
+            created_at,
+            projects ( id, title, tagline, category )
+          `)
+          .eq("applicant_id", userId);
+
+        if (!error && dbApps && dbApps.length > 0) {
+          const mappedDb: ProjectApplication[] = dbApps.map((row: any) => ({
+            id: row.id,
+            projectId: row.project_id,
+            applicantId: row.applicant_id,
+            status: row.status as "pending" | "accepted" | "rejected" | "withdrawn",
+            compatibilityScore: Number(row.compatibility_score || 85),
+            pitchNote: row.pitch_note || undefined,
+            createdAt: row.created_at,
+            project: row.projects || MOCK_PROJECTS.find((p) => p.id === row.project_id),
+          }));
+
+          const existingIds = new Set(mappedDb.map((a) => a.projectId));
+          const filteredLocal = localApps.filter((a) => !existingIds.has(a.projectId));
+          return [...mappedDb, ...filteredLocal];
+        }
+      } catch {
+        // Return local list
       }
     }
 

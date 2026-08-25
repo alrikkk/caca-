@@ -23,6 +23,7 @@ export default function OnboardingPage() {
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("sophomore");
   const [workingStyle, setWorkingStyle] = useState<WorkingStyle>("collaborative");
   const [bio, setBio] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
@@ -87,6 +88,7 @@ export default function OnboardingPage() {
         experienceLevel,
         workingStyle,
         bio: bio.trim() || undefined,
+        phoneNumber: phoneNumber.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
         linkedinUrl: linkedinUrl.trim() || undefined,
         githubUrl: githubUrl.trim() || undefined,
@@ -123,10 +125,10 @@ export default function OnboardingPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs">
-          {/* Avatar Upload in Onboarding */}
-          <div className="flex items-center gap-4 p-3 bg-canvas-subtle border-hard">
+          {/* Avatar Selector */}
+          <div className="p-3.5 bg-canvas-subtle border-hard flex items-center gap-4">
             <Avatar name={fullName || "Student"} src={avatarUrl} size="md" />
-            <div className="space-y-1">
+            <div className="space-y-1 flex-1">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -185,6 +187,15 @@ export default function OnboardingPage() {
               onChange={(e) => setMajor(e.target.value)}
               required
             />
+            <Input
+              label="PHONE NUMBER (OPTIONAL)"
+              placeholder="+1 (555) 000-0000"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="block font-bold uppercase tracking-wider text-ink">
                 EXPERIENCE LEVEL
@@ -201,9 +212,7 @@ export default function OnboardingPage() {
                 <option value="grad">GRADUATE</option>
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="block font-bold uppercase tracking-wider text-ink">
                 WORKING STYLE
@@ -220,87 +229,66 @@ export default function OnboardingPage() {
                 <option value="mentor-oriented">MENTOR-ORIENTED</option>
               </select>
             </div>
-            <Input
-              label="HOURS / WEEK COMMITMENT"
-              type="number"
-              value={hoursPerWeek}
-              onChange={(e) => setHoursPerWeek(Number(e.target.value))}
-              required
-            />
           </div>
 
-          {/* Bio */}
+          <Input
+            label="LINKEDIN URL (OPTIONAL)"
+            placeholder="https://linkedin.com/in/username"
+            value={linkedinUrl}
+            onChange={(e) => setLinkedinUrl(e.target.value)}
+          />
+
           <div className="space-y-1.5">
             <label className="block font-bold uppercase tracking-wider text-ink">
-              SHORT BIO (OPTIONAL)
+              SHORT BIO / OBJECTIVE
             </label>
             <textarea
-              rows={2}
+              placeholder="What are your primary technical interests or hackathon goals?"
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              placeholder="What are you interested in building or learning?"
-              className="w-full p-2.5 bg-canvas-subtle border-hard text-ink focus:outline-none focus:bg-white"
+              className="w-full p-3 bg-white border-hard text-xs focus:outline-none min-h-[60px]"
             />
           </div>
 
-          {/* Social Links (Optional) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input
-              label="LINKEDIN"
-              placeholder="https://linkedin.com/in/..."
-              value={linkedinUrl}
-              onChange={(e) => setLinkedinUrl(e.target.value)}
-            />
-            <Input
-              label="GITHUB"
-              placeholder="https://github.com/..."
-              value={githubUrl}
-              onChange={(e) => setGithubUrl(e.target.value)}
-            />
-            <Input
-              label="PORTFOLIO"
-              placeholder="https://..."
-              value={portfolioUrl}
-              onChange={(e) => setPortfolioUrl(e.target.value)}
-            />
-          </div>
+          {/* Skills Section */}
+          <div className="space-y-2 pt-2 border-t border-ink/20">
+            <label className="block font-bold uppercase tracking-wider text-ink">
+              TECHNICAL SKILLS ({skills.length})
+            </label>
 
-          {/* Initial Skills */}
-          <div className="space-y-2 pt-2 border-t-2 border-ink">
-            <p className="font-bold uppercase text-ink">
-              YOUR SKILLS & PROFICIENCY (1-5)
-            </p>
-
-            <div className="divide-y divide-ink/10 border-hard bg-canvas-subtle p-3">
+            <div className="flex flex-wrap gap-1.5">
               {skills.map((s, idx) => (
-                <div key={idx} className="flex items-center justify-between py-1.5">
+                <span
+                  key={idx}
+                  className="px-2 py-1 bg-canvas-subtle border-hard-sm flex items-center gap-1.5 text-[11px]"
+                >
                   <span className="font-bold">{s.name}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="font-black">{s.proficiency}/5</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSkill(idx)}
-                      className="text-ink-muted hover:text-red-600"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
+                  <span className="text-ink-muted">({s.proficiency}/5)</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveSkill(idx)}
+                    className="text-red-500 hover:text-red-700 ml-1"
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
             </div>
 
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="ADD SKILL (E.G. 'TYPESCRIPT', 'PYTORCH')..."
-                value={newSkillName}
-                onChange={(e) => setNewSkillName(e.target.value)}
-                className="flex-1 h-9 px-2.5 bg-white border-hard uppercase focus:outline-none"
-              />
+            <div className="flex gap-2 items-end pt-1">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder="Add skill (e.g. Next.js, Rust)"
+                  value={newSkillName}
+                  onChange={(e) => setNewSkillName(e.target.value)}
+                  className="w-full h-10 px-3 bg-white border-hard uppercase text-ink focus:outline-none"
+                />
+              </div>
               <select
                 value={newSkillProf}
                 onChange={(e) => setNewSkillProf(Number(e.target.value))}
-                className="h-9 px-2 bg-white border-hard uppercase focus:outline-none"
+                className="w-24 h-10 px-2 bg-white border-hard font-mono text-xs focus:outline-none"
               >
                 <option value={1}>1/5</option>
                 <option value={2}>2/5</option>
@@ -313,25 +301,24 @@ export default function OnboardingPage() {
                 variant="accent"
                 size="sm"
                 onClick={handleAddSkill}
-                className="h-9 px-3 text-xs"
+                className="h-10 text-xs"
               >
-                <Plus className="w-3.5 h-3.5 mr-1" /> ADD
+                +
               </Button>
             </div>
           </div>
 
-          <div className="pt-4 flex justify-end">
-            <Button
-              type="submit"
-              variant="primary"
-              size="md"
-              isLoading={loading}
-              className="flex items-center gap-2"
-            >
-              <span>COMPLETE PROFILE & ENTER FEED</span>
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            className="w-full mt-4 flex items-center justify-center gap-2"
+            isLoading={loading}
+            disabled={loading || !fullName.trim() || !college.trim()}
+          >
+            <span>ENTER DISCOVERY FEED</span>
+            <ArrowRight className="w-4 h-4" />
+          </Button>
         </form>
       </div>
     </div>
