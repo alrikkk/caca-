@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { WorkingStyle, UserSkill } from "@/types/user";
+import { WorkingStyle, UserSkill, ExperienceLevel } from "@/types/user";
 import { ProfileService } from "@/services/profile-service";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -22,6 +22,7 @@ import {
   Upload,
   X,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 
 export default function ProfilePage() {
@@ -29,6 +30,10 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState("");
+  const [college, setCollege] = useState("");
+  const [major, setMajor] = useState("");
+  const [gradYear, setGradYear] = useState(2026);
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("junior");
   const [bio, setBio] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
@@ -41,13 +46,19 @@ export default function ProfilePage() {
 
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillProf, setNewSkillProf] = useState(4);
-  const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.fullName || "");
+      setCollege(profile.college || "");
+      setMajor(profile.major || "");
+      setGradYear(profile.gradYear || 2026);
+      setExperienceLevel(profile.experienceLevel || "junior");
       setBio(profile.bio || "");
       setPhoneNumber(profile.phoneNumber || "");
       setAvatarUrl(profile.avatarUrl);
@@ -110,11 +121,20 @@ export default function ProfilePage() {
     setProfile(updated);
   };
 
-  const handleAddSkill = () => {
-    if (!newSkillName.trim()) return;
+  const handleAddSkill = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanName = newSkillName.trim();
+    if (!cleanName) return;
+
+    if (skills.some((s) => s.name.toLowerCase() === cleanName.toLowerCase())) {
+      setSaveError(`Skill "${cleanName}" is already added.`);
+      setTimeout(() => setSaveError(null), 3000);
+      return;
+    }
+
     const newSkill: UserSkill = {
       id: `sk_${Date.now()}`,
-      name: newSkillName.trim(),
+      name: cleanName,
       category: "general",
       proficiency: newSkillProf,
       yearsExperience: 1.0,
@@ -128,74 +148,141 @@ export default function ProfilePage() {
     setSkills(skills.filter((s) => s.id !== id));
   };
 
-  const handleSave = () => {
-    if (!profile) return;
+  const handleSave = async () => {
+    if (!profile || isSaving) return;
+    setIsSaving(true);
+    setSaveSuccess(false);
+    setSaveError(null);
+
+    // Validate LinkedIn URL
+    const cleanLinkedin = linkedinUrl.trim();
+    if (cleanLinkedin && !cleanLinkedin.startsWith("https://")) {
+      setSaveError("LinkedIn URL must start with https://");
+      setIsSaving(false);
+      return;
+    }
+
     const updated = {
       ...profile,
       fullName: fullName.trim() || profile.fullName,
+      college: college.trim() || profile.college,
+      major: major.trim() || profile.major,
+      gradYear: Number(gradYear),
+      experienceLevel,
       bio: bio.trim() || undefined,
       phoneNumber: phoneNumber.trim() || undefined,
       avatarUrl: avatarUrl || undefined,
       workingStyle,
       githubUrl: githubUrl.trim() || undefined,
       portfolioUrl: portfolioUrl.trim() || undefined,
-      linkedinUrl: linkedinUrl.trim() || undefined,
+      linkedinUrl: cleanLinkedin || undefined,
       skills,
       availability: {
         ...profile.availability,
         hoursPerWeek,
       },
     };
-    setProfile(updated);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+
+    try {
+      await ProfileService.updateProfile(updated);
+      setProfile(updated);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+    } catch (err: any) {
+      console.error("Profile save exception:", err);
+      setSaveError(err?.message || "COULD NOT SAVE PROFILE. Please try again.");
+      setTimeout(() => setSaveError(null), 4000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
-      {/* Top Banner */}
+    <div className="space-y-6 max-w-2xl mx-auto pb-12">
+      {/* Header */}
       <div className="border-b-2 border-ink pb-3 flex items-center justify-between">
-        <h1 className="text-2xl sm:text-3xl font-black font-mono tracking-tight uppercase text-ink">
-          STUDENT PROFILE
-        </h1>
-        <div className="flex items-center gap-2">
-          {isDemoMode && (
-            <Badge variant="lime" size="sm">
-              DEMO USER (ALEX CHEN)
-            </Badge>
-          )}
-          {isSaved && (
-            <div className="flex items-center gap-1 font-mono text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 border-hard-sm">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>SAVED TO DATABASE</span>
-            </div>
-          )}
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black font-mono tracking-tight uppercase text-ink">
+            PROFILE MATRIX
+          </h1>
+          <p className="text-xs font-mono text-ink-muted">
+            {isDemoMode ? "DEMO MODE (ALEX CHEN)" : profile.email || "STUDENT ACCOUNT"}
+          </p>
         </div>
+        <Badge variant="lime" size="sm">
+          {workingStyle.toUpperCase()}
+        </Badge>
       </div>
 
-      {/* Identity & Avatar Card */}
-      <div className="bg-white border-hard shadow-hard p-5 sm:p-6 space-y-5">
-        <h2 className="text-xs font-mono font-black uppercase text-ink border-b-2 border-ink pb-2">
-          IDENTITY & PHOTO
-        </h2>
+      {/* Save Notification Toast / Feedback */}
+      {saveSuccess && (
+        <div className="p-3 bg-caca-lime border-hard shadow-hard flex items-center gap-2 font-mono text-xs font-bold text-ink uppercase animate-in-fade">
+          <CheckCircle2 className="w-4 h-4 text-ink shrink-0" />
+          <span>PROFILE SAVED ✓</span>
+        </div>
+      )}
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          {/* Avatar with Camera Overlay */}
+      {saveError && (
+        <div className="p-3 bg-red-50 border-hard-sm border-red-500 shadow-hard flex items-center gap-2 font-mono text-xs font-bold text-red-600 uppercase animate-in-fade">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      )}
+
+      {/* Main Info Card */}
+      <div className="bg-white border-hard shadow-hard p-5 sm:p-6 space-y-6">
+        {/* Avatar Upload / PFP */}
+        <div className="flex flex-col sm:flex-row items-center gap-4 pb-4 border-b border-ink/10">
           <div className="relative group">
-            <Avatar
-              name={fullName || profile.fullName}
-              src={avatarUrl}
-              size="lg"
-            />
+            <Avatar name={fullName || "Student"} src={avatarUrl} size="lg" />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading}
-              className="absolute inset-0 bg-ink/50 text-white rounded-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity btn-tactile border-hard cursor-pointer"
-              title="Upload avatar photo"
+              className="absolute inset-0 bg-ink/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border-hard cursor-pointer"
+              title="Change Avatar"
             >
-              <Camera className="w-5 h-5 text-caca-lime" />
+              {isUploading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Camera className="w-5 h-5" />
+              )}
             </button>
+          </div>
+
+          <div className="space-y-1.5 text-center sm:text-left flex-1">
+            <h3 className="font-mono font-bold text-xs uppercase text-ink">
+              PROFILE PICTURE
+            </h3>
+            <p className="text-[11px] font-mono text-ink-muted">
+              JPG, PNG or WEBP (Max 5MB).
+            </p>
+            <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="text-xs h-7"
+              >
+                <Upload className="w-3 h-3 mr-1" />
+                <span>{isUploading ? "UPLOADING..." : "UPLOAD PHOTO"}</span>
+              </Button>
+              {avatarUrl && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRemoveAvatar}
+                  disabled={isUploading}
+                  className="text-xs h-7 text-red-600 hover:bg-red-50"
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  <span>REMOVE</span>
+                </Button>
+              )}
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -203,237 +290,262 @@ export default function ProfilePage() {
               className="hidden"
               onChange={handleAvatarFileChange}
             />
-          </div>
-
-          <div className="space-y-2 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                isLoading={isUploading}
-                className="flex items-center gap-1.5 text-xs"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>{avatarUrl ? "CHANGE PHOTO" : "UPLOAD PHOTO"}</span>
-              </Button>
-              {avatarUrl && (
-                <button
-                  type="button"
-                  onClick={handleRemoveAvatar}
-                  className="px-2 py-1 border-hard text-[11px] font-mono font-bold uppercase text-red-600 hover:bg-red-50"
-                >
-                  REMOVE
-                </button>
-              )}
-            </div>
-
-            <p className="text-[11px] font-mono text-ink-muted">
-              {profile.college} • {profile.major} (GRAD {profile.gradYear})
-            </p>
+            {uploadError && (
+              <p className="text-[10px] font-mono text-red-600 uppercase font-bold">
+                {uploadError}
+              </p>
+            )}
           </div>
         </div>
 
-        {uploadError && (
-          <div className="p-2.5 bg-red-50 border-hard-sm border-red-500 text-xs font-mono font-bold text-red-600 flex items-center gap-1.5">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{uploadError}</span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+        {/* Identity Information */}
+        <div className="space-y-4">
           <Input
             label="FULL NAME"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            placeholder="Your name"
+            placeholder="Alex Chen"
+            required
           />
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="COLLEGE / UNIVERSITY"
+              value={college}
+              onChange={(e) => setCollege(e.target.value)}
+              placeholder="Stanford University"
+              required
+            />
+
+            <Input
+              label="MAJOR / FIELD OF STUDY"
+              value={major}
+              onChange={(e) => setMajor(e.target.value)}
+              placeholder="Computer Science"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block text-xs font-mono font-bold uppercase text-ink">
+                EXPERIENCE LEVEL
+              </label>
+              <select
+                value={experienceLevel}
+                onChange={(e) => setExperienceLevel(e.target.value as ExperienceLevel)}
+                className="w-full h-10 px-3 bg-white border-hard font-mono text-xs uppercase text-ink shadow-hard-sm focus:outline-none"
+              >
+                <option value="freshman">Freshman</option>
+                <option value="sophomore">Sophomore</option>
+                <option value="junior">Junior</option>
+                <option value="senior">Senior</option>
+                <option value="master">Master</option>
+                <option value="phd">PhD</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-mono font-bold uppercase text-ink">
+                GRADUATION YEAR
+              </label>
+              <input
+                type="number"
+                value={gradYear}
+                onChange={(e) => setGradYear(Number(e.target.value))}
+                className="w-full h-10 px-3 bg-white border-hard font-mono text-xs text-ink shadow-hard-sm focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-mono font-bold uppercase text-ink">
+              STUDENT BIO
+            </label>
+            <textarea
+              rows={3}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="What are you building or researching?"
+              className="w-full p-2.5 bg-white border-hard font-mono text-xs text-ink shadow-hard-sm focus:outline-none resize-none"
+            />
+          </div>
+
           <Input
-            label="PHONE NUMBER (OPTIONAL)"
+            label="PHONE NUMBER (OPTIONAL CONTACT)"
+            type="tel"
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value)}
             placeholder="+1 (555) 000-0000"
           />
         </div>
 
-        <div className="space-y-1">
-          <label className="block font-mono text-xs font-bold uppercase tracking-wider text-ink">
-            BIO / STATEMENT
-          </label>
-          <textarea
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            placeholder="Tell squads about your background, passions, and current goals..."
-            className="w-full p-3 bg-white border-hard font-mono text-xs text-ink focus:outline-none min-h-[75px]"
-          />
-        </div>
-      </div>
+        {/* Custom Skills Section */}
+        <div className="space-y-3 pt-2 border-t border-ink/10">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-mono font-bold uppercase text-ink">
+              SKILLS & PROFICIENCIES ({skills.length})
+            </label>
+            <span className="text-[10px] font-mono text-ink-muted">
+              ENTER ANY CUSTOM SKILL
+            </span>
+          </div>
 
-      {/* Verified Skills Matrix */}
-      <div className="bg-white border-hard shadow-hard p-5 space-y-4">
-        <h2 className="text-xs font-mono font-black uppercase text-ink border-b-2 border-ink pb-2">
-          SKILLS & PROFICIENCY ({skills.length})
-        </h2>
-
-        {/* Existing skills */}
-        <div className="divide-y divide-ink/10">
-          {skills.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center justify-between py-2 text-xs font-mono"
-            >
-              <span className="font-bold text-ink">{s.name}</span>
-              <div className="flex items-center gap-3">
-                <span className="font-black text-ink">{s.proficiency} / 5</span>
-                <button
-                  onClick={() => handleRemoveSkill(s.id)}
-                  className="text-red-500 hover:text-red-700 p-1"
-                  aria-label="Remove skill"
+          {/* Add custom skill input */}
+          <div className="p-3 bg-canvas-subtle border-hard space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={newSkillName}
+                onChange={(e) => setNewSkillName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddSkill();
+                  }
+                }}
+                placeholder="TYPE SKILL (e.g. Rust, PyTorch, Figma...)"
+                className="flex-1 h-9 px-3 bg-white border-hard font-mono text-xs uppercase text-ink shadow-hard-sm focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <select
+                  value={newSkillProf}
+                  onChange={(e) => setNewSkillProf(Number(e.target.value))}
+                  className="h-9 px-2 bg-white border-hard font-mono text-xs uppercase text-ink shadow-hard-sm focus:outline-none"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                  <option value={1}>1 (Beginner)</option>
+                  <option value={2}>2 (Novice)</option>
+                  <option value={3}>3 (Intermediate)</option>
+                  <option value={4}>4 (Proficient)</option>
+                  <option value={5}>5 (Expert)</option>
+                </select>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={handleAddSkill}
+                  className="h-9 text-xs flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>ADD</span>
+                </Button>
               </div>
             </div>
-          ))}
+          </div>
+
+          {/* Skills pills */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {skills.map((sk) => (
+              <span
+                key={sk.id || sk.name}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm font-mono text-xs font-bold uppercase text-ink group"
+              >
+                <span>{sk.name}</span>
+                <span className="bg-caca-lime px-1 py-0.2 text-[10px] border-hard-sm">
+                  {sk.proficiency}/5
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveSkill(sk.id)}
+                  className="text-ink-muted hover:text-red-600 transition-colors ml-0.5"
+                  title="Remove Skill"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            {skills.length === 0 && (
+              <p className="text-xs font-mono text-ink-muted">
+                No skills added yet. Add your tech stack above.
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Add Skill */}
-        <div className="flex flex-col sm:flex-row items-end gap-2 pt-2 border-t-2 border-ink">
-          <div className="flex-1 w-full">
+        {/* Social Links */}
+        <div className="space-y-3 pt-2 border-t border-ink/10">
+          <label className="block text-xs font-mono font-bold uppercase text-ink">
+            PUBLIC SOCIALS & PORTFOLIO
+          </label>
+
+          <Input
+            label="LINKEDIN URL (HTTPS)"
+            type="url"
+            value={linkedinUrl}
+            onChange={(e) => setLinkedinUrl(e.target.value)}
+            placeholder="https://linkedin.com/in/username"
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
-              label="NEW SKILL"
-              placeholder="e.g. PyTorch, Rust, Solidity"
-              value={newSkillName}
-              onChange={(e) => setNewSkillName(e.target.value)}
+              label="GITHUB URL"
+              type="url"
+              value={githubUrl}
+              onChange={(e) => setGithubUrl(e.target.value)}
+              placeholder="https://github.com/username"
+            />
+
+            <Input
+              label="PORTFOLIO / WEBSITE"
+              type="url"
+              value={portfolioUrl}
+              onChange={(e) => setPortfolioUrl(e.target.value)}
+              placeholder="https://myportfolio.com"
             />
           </div>
-          <div className="w-full sm:w-28 space-y-1">
-            <label className="block font-mono text-xs font-bold uppercase tracking-wider text-ink">
-              LEVEL (1-5)
-            </label>
-            <select
-              value={newSkillProf}
-              onChange={(e) => setNewSkillProf(Number(e.target.value))}
-              className="w-full h-11 px-2.5 bg-white border-hard font-mono text-xs text-ink focus:outline-none"
-            >
-              <option value={1}>1 (Beginner)</option>
-              <option value={2}>2 (Learning)</option>
-              <option value={3}>3 (Intermediate)</option>
-              <option value={4}>4 (Proficient)</option>
-              <option value={5}>5 (Expert)</option>
-            </select>
+        </div>
+
+        {/* Availability & Working Style */}
+        <div className="space-y-4 pt-2 border-t border-ink/10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block text-xs font-mono font-bold uppercase text-ink">
+                HOURS PER WEEK: {hoursPerWeek}H
+              </label>
+              <input
+                type="range"
+                min={5}
+                max={40}
+                step={5}
+                value={hoursPerWeek}
+                onChange={(e) => setHoursPerWeek(Number(e.target.value))}
+                className="w-full accent-ink cursor-pointer"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-mono font-bold uppercase text-ink">
+                WORKING STYLE
+              </label>
+              <select
+                value={workingStyle}
+                onChange={(e) => setWorkingStyle(e.target.value as WorkingStyle)}
+                className="w-full h-10 px-3 bg-white border-hard font-mono text-xs uppercase text-ink shadow-hard-sm focus:outline-none"
+              >
+                <option value="collaborative">Collaborative</option>
+                <option value="independent">Independent</option>
+                <option value="structured">Structured</option>
+                <option value="mentor-oriented">Mentor-Oriented</option>
+              </select>
+            </div>
           </div>
+        </div>
+
+        {/* Save Button */}
+        <div className="pt-3 border-t-2 border-ink">
           <Button
-            variant="accent"
-            size="md"
-            onClick={handleAddSkill}
-            className="w-full sm:w-auto h-11 flex items-center justify-center gap-1"
+            type="button"
+            variant="primary"
+            size="lg"
+            onClick={handleSave}
+            isLoading={isSaving}
+            disabled={isSaving}
+            className="w-full flex items-center justify-center gap-2 text-sm"
           >
-            <Plus className="w-4 h-4" />
-            <span>ADD</span>
+            <Save className="w-4 h-4" />
+            <span>{isSaving ? "SAVING CHANGES..." : "SAVE PROFILE CHANGES"}</span>
           </Button>
         </div>
-      </div>
-
-      {/* Availability & Style */}
-      <div className="bg-white border-hard shadow-hard p-5 space-y-4">
-        <h2 className="text-xs font-mono font-black uppercase text-ink border-b-2 border-ink pb-2">
-          AVAILABILITY & WORKING STYLE
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="block font-mono text-xs font-bold uppercase tracking-wider text-ink">
-              WEEKLY HOURS ({hoursPerWeek}H)
-            </label>
-            <input
-              type="range"
-              min={5}
-              max={40}
-              step={1}
-              value={hoursPerWeek}
-              onChange={(e) => setHoursPerWeek(Number(e.target.value))}
-              className="w-full accent-ink cursor-pointer"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="block font-mono text-xs font-bold uppercase tracking-wider text-ink">
-              WORKING STYLE
-            </label>
-            <select
-              value={workingStyle}
-              onChange={(e) => setWorkingStyle(e.target.value as WorkingStyle)}
-              className="w-full h-11 px-3 bg-white border-hard font-mono text-xs uppercase text-ink focus:outline-none"
-            >
-              <option value="collaborative">COLLABORATIVE</option>
-              <option value="independent">INDEPENDENT</option>
-              <option value="structured">STRUCTURED</option>
-              <option value="fast-paced">FAST-PACED</option>
-              <option value="mentor-oriented">MENTOR-ORIENTED</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Social & Portfolio Links */}
-      <div className="bg-white border-hard shadow-hard p-5 space-y-4">
-        <h2 className="text-xs font-mono font-black uppercase text-ink border-b-2 border-ink pb-2">
-          LINKS & SOCIALS
-        </h2>
-
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Linkedin className="w-4 h-4 text-[#0A66C2] shrink-0" />
-            <div className="flex-1">
-              <Input
-                label="LINKEDIN URL"
-                placeholder="https://linkedin.com/in/username"
-                value={linkedinUrl}
-                onChange={(e) => setLinkedinUrl(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Github className="w-4 h-4 text-ink shrink-0" />
-            <div className="flex-1">
-              <Input
-                label="GITHUB URL"
-                placeholder="https://github.com/username"
-                value={githubUrl}
-                onChange={(e) => setGithubUrl(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-ink shrink-0" />
-            <div className="flex-1">
-              <Input
-                label="PORTFOLIO / WEBSITE"
-                placeholder="https://yourportfolio.dev"
-                value={portfolioUrl}
-                onChange={(e) => setPortfolioUrl(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Save Button Sticky */}
-      <div className="sticky bottom-4 z-20">
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={handleSave}
-          className="w-full flex items-center justify-center gap-2 shadow-hard-lg"
-        >
-          <Save className="w-4 h-4" />
-          <span>SAVE PROFILE CHANGES</span>
-        </Button>
       </div>
     </div>
   );

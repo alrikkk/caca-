@@ -50,7 +50,6 @@ export class ProfileService {
 
     try {
       const supabase = createClient();
-      // Fast single row query with maybeSingle to never throw on missing profile
       const { data: profileData, error } = await supabase
         .from("profiles")
         .select(`
@@ -144,7 +143,8 @@ export class ProfileService {
       }
 
       return mappedProfile;
-    } catch {
+    } catch (err) {
+      console.error("getCurrentProfile error:", err);
       if (typeof window !== "undefined") {
         const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
         if (stored) return JSON.parse(stored);
@@ -154,11 +154,9 @@ export class ProfileService {
   }
 
   /**
-   * Fetches any student profile by ID (demo student or real Supabase student)
-   * Strictly never exposes private email, phone, or credentials in public lookup
+   * Fetches any student profile by ID without exposing private fields
    */
   static async getProfileById(userId: string): Promise<StudentProfile | null> {
-    // 1. Check fictional mock students for Demo browsing
     const mockMatch = MOCK_STUDENTS.find((s) => s.id === userId);
     if (mockMatch) {
       return {
@@ -168,7 +166,6 @@ export class ProfileService {
       };
     }
 
-    // 2. Check local stored active profile
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
       if (stored) {
@@ -187,7 +184,6 @@ export class ProfileService {
       }
     }
 
-    // 3. Query Supabase profiles table if live
     if (isSupabaseConfigured()) {
       try {
         const supabase = createClient();
@@ -265,7 +261,7 @@ export class ProfileService {
 
           return {
             id: profileData.id,
-            email: "", // Never expose email in public profile lookup
+            email: "",
             fullName: profileData.full_name,
             headline: profileData.headline,
             college: profileData.college,
@@ -274,7 +270,7 @@ export class ProfileService {
             experienceLevel: profileData.experience_level,
             workingStyle: profileData.working_style || "collaborative",
             bio: profileData.bio || undefined,
-            phoneNumber: undefined, // Never expose phone in public profile lookup
+            phoneNumber: undefined,
             avatarUrl: profileData.avatar_url || undefined,
             githubUrl: profileData.github_url || undefined,
             portfolioUrl: profileData.portfolio_url || undefined,
@@ -284,8 +280,8 @@ export class ProfileService {
             availability: avail,
           };
         }
-      } catch {
-        // Fallback to null
+      } catch (err) {
+        console.error("getProfileById error:", err);
       }
     }
 
@@ -293,8 +289,7 @@ export class ProfileService {
   }
 
   /**
-   * Search real student profiles from Supabase or curated mock list
-   * Strictly protects private fields (email, phone, passwords)
+   * Search real student profiles with strict privacy protection
    */
   static async searchProfiles(query: string): Promise<StudentProfile[]> {
     const q = query.trim();
@@ -352,7 +347,7 @@ export class ProfileService {
         if (!error && data && data.length > 0) {
           return data.map((p: any) => ({
             id: p.id,
-            email: "", // Privacy protected
+            email: "",
             fullName: p.full_name,
             headline: p.headline,
             college: p.college,
@@ -382,12 +377,11 @@ export class ProfileService {
             },
           }));
         }
-      } catch {
-        // Fallback
+      } catch (err) {
+        console.error("searchProfiles database error:", err);
       }
     }
 
-    // Fallback to searching mock students
     const lower = q.toLowerCase();
     return MOCK_STUDENTS.filter(
       (s) =>
@@ -403,7 +397,7 @@ export class ProfileService {
   }
 
   /**
-   * Completes the first-time onboarding profile setup
+   * Completes the first-time onboarding profile setup with verified database writes
    */
   static async completeOnboarding(
     userId: string,
@@ -413,21 +407,21 @@ export class ProfileService {
     const newProfile: StudentProfile = {
       id: userId,
       email,
-      fullName: data.fullName,
-      college: data.college,
-      major: data.major,
+      fullName: data.fullName.trim(),
+      college: data.college.trim(),
+      major: data.major.trim(),
       gradYear: data.gradYear,
       experienceLevel: data.experienceLevel,
       workingStyle: data.workingStyle,
-      bio: data.bio || undefined,
-      phoneNumber: data.phoneNumber || undefined,
+      bio: data.bio?.trim() || undefined,
+      phoneNumber: data.phoneNumber?.trim() || undefined,
       avatarUrl: data.avatarUrl || undefined,
-      githubUrl: data.githubUrl || undefined,
-      portfolioUrl: data.portfolioUrl || undefined,
-      linkedinUrl: data.linkedinUrl || undefined,
+      githubUrl: data.githubUrl?.trim() || undefined,
+      portfolioUrl: data.portfolioUrl?.trim() || undefined,
+      linkedinUrl: data.linkedinUrl?.trim() || undefined,
       skills: data.skills.map((s, idx) => ({
         id: `sk_onboard_${idx}`,
-        name: s.name,
+        name: s.name.trim(),
         category: s.category,
         proficiency: s.proficiency,
         yearsExperience: 1.0,
@@ -444,35 +438,74 @@ export class ProfileService {
     };
 
     if (isSupabaseConfigured()) {
-      try {
-        const supabase = createClient();
-        await supabase.from("profiles").upsert({
-          id: userId,
-          email,
-          full_name: data.fullName,
-          college: data.college,
-          major: data.major,
-          grad_year: data.gradYear,
-          experience_level: data.experienceLevel,
-          working_style: data.workingStyle,
-          bio: data.bio || null,
-          phone_number: data.phoneNumber || null,
-          avatar_url: data.avatarUrl || null,
-          github_url: data.githubUrl || null,
-          portfolio_url: data.portfolioUrl || null,
-          linkedin_url: data.linkedinUrl || null,
-        });
+      const supabase = createClient();
 
-        await supabase.from("availability").upsert({
-          user_id: userId,
-          hours_per_week: data.hoursPerWeek,
-          timezone: newProfile.availability.timezone,
-          prefers_remote: true,
-          weekend_availability: true,
-          weekday_evenings: true,
-        });
-      } catch {
-        // Fallback
+      const { error: profileError } = await supabase.from("profiles").upsert({
+        id: userId,
+        email,
+        full_name: newProfile.fullName,
+        college: newProfile.college,
+        major: newProfile.major,
+        grad_year: newProfile.gradYear,
+        experience_level: newProfile.experienceLevel,
+        working_style: newProfile.workingStyle,
+        bio: newProfile.bio || null,
+        phone_number: newProfile.phoneNumber || null,
+        avatar_url: newProfile.avatarUrl || null,
+        github_url: newProfile.githubUrl || null,
+        portfolio_url: newProfile.portfolioUrl || null,
+        linkedin_url: newProfile.linkedinUrl || null,
+      });
+
+      if (profileError) {
+        console.error("Supabase profile onboarding insert failed:", profileError);
+        throw new Error(profileError.message || "Failed to create profile record in database");
+      }
+
+      const { error: availError } = await supabase.from("availability").upsert({
+        user_id: userId,
+        hours_per_week: data.hoursPerWeek,
+        timezone: newProfile.availability.timezone,
+        prefers_remote: true,
+        weekend_availability: true,
+        weekday_evenings: true,
+      });
+
+      if (availError) {
+        console.error("Supabase availability insert failed:", availError);
+      }
+
+      // Upsert skills
+      for (const sk of data.skills) {
+        const skillName = sk.name.trim();
+        if (!skillName) continue;
+
+        let skillId: string | null = null;
+        const { data: existingSkill } = await supabase
+          .from("skills")
+          .select("id")
+          .ilike("name", skillName)
+          .maybeSingle();
+
+        if (existingSkill?.id) {
+          skillId = existingSkill.id;
+        } else {
+          const { data: createdSkill } = await supabase
+            .from("skills")
+            .insert({ name: skillName, category: sk.category || "general" })
+            .select("id")
+            .maybeSingle();
+          if (createdSkill?.id) skillId = createdSkill.id;
+        }
+
+        if (skillId) {
+          await supabase.from("user_skills").upsert({
+            user_id: userId,
+            skill_id: skillId,
+            proficiency: sk.proficiency,
+            years_experience: 1,
+          });
+        }
       }
     }
 
@@ -487,43 +520,91 @@ export class ProfileService {
   }
 
   /**
-   * Updates an existing profile
+   * Updates an existing profile and verifies database writes
    */
   static async updateProfile(profile: StudentProfile): Promise<void> {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(profile));
-    }
-
     if (isSupabaseConfigured()) {
-      try {
-        const supabase = createClient();
-        await supabase.from("profiles").update({
-          full_name: profile.fullName,
-          bio: profile.bio || null,
-          phone_number: profile.phoneNumber || null,
+      const supabase = createClient();
+
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          full_name: profile.fullName.trim(),
+          college: profile.college.trim(),
+          major: profile.major.trim(),
+          grad_year: profile.gradYear,
+          experience_level: profile.experienceLevel,
+          bio: profile.bio?.trim() || null,
+          phone_number: profile.phoneNumber?.trim() || null,
           avatar_url: profile.avatarUrl || null,
           working_style: profile.workingStyle,
-          github_url: profile.githubUrl || null,
-          portfolio_url: profile.portfolioUrl || null,
-          linkedin_url: profile.linkedinUrl || null,
-        }).eq("id", profile.id);
+          github_url: profile.githubUrl?.trim() || null,
+          portfolio_url: profile.portfolioUrl?.trim() || null,
+          linkedin_url: profile.linkedinUrl?.trim() || null,
+        })
+        .eq("id", profile.id);
 
-        await supabase.from("availability").upsert({
-          user_id: profile.id,
-          hours_per_week: profile.availability.hoursPerWeek,
-          timezone: profile.availability.timezone || "UTC",
-          prefers_remote: profile.availability.prefersRemote,
-          weekend_availability: profile.availability.weekendAvailability,
-          weekday_evenings: profile.availability.weekdayEvenings,
-        });
-      } catch {
-        // Fallback
+      if (profileError) {
+        console.error("Supabase profile update failed:", profileError);
+        throw new Error(profileError.message || "Failed to update profile in database");
       }
+
+      const { error: availError } = await supabase.from("availability").upsert({
+        user_id: profile.id,
+        hours_per_week: profile.availability.hoursPerWeek,
+        timezone: profile.availability.timezone || "UTC",
+        prefers_remote: profile.availability.prefersRemote,
+        weekend_availability: profile.availability.weekendAvailability,
+        weekday_evenings: profile.availability.weekdayEvenings,
+      });
+
+      if (availError) {
+        console.error("Supabase availability update failed:", availError);
+      }
+
+      // Upsert custom skills into public.skills and public.user_skills
+      const activeSkillIds: string[] = [];
+      for (const sk of profile.skills) {
+        const skillName = sk.name.trim();
+        if (!skillName) continue;
+
+        let skillId: string | null = null;
+        const { data: existingSkill } = await supabase
+          .from("skills")
+          .select("id")
+          .ilike("name", skillName)
+          .maybeSingle();
+
+        if (existingSkill?.id) {
+          skillId = existingSkill.id;
+        } else {
+          const { data: createdSkill } = await supabase
+            .from("skills")
+            .insert({ name: skillName, category: sk.category || "general" })
+            .select("id")
+            .maybeSingle();
+          if (createdSkill?.id) skillId = createdSkill.id;
+        }
+
+        if (skillId) {
+          activeSkillIds.push(skillId);
+          await supabase.from("user_skills").upsert({
+            user_id: profile.id,
+            skill_id: skillId,
+            proficiency: sk.proficiency,
+            years_experience: sk.yearsExperience || 1,
+          });
+        }
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(profile));
     }
   }
 
   /**
-   * Uploads an avatar image to Supabase Storage (with local base64 fallback)
+   * Uploads an avatar image to Supabase Storage
    */
   static async uploadAvatar(
     userId: string,
@@ -570,7 +651,6 @@ export class ProfileService {
       }
     }
 
-    // Local base64 data URL fallback
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => resolve({ url: reader.result as string });

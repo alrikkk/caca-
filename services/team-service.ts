@@ -61,16 +61,6 @@ export class TeamService {
       createdAt: new Date().toISOString(),
     };
 
-    // Save in local storage cache
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(LOCAL_TEAMS_KEY);
-      let list: TeamRecord[] = stored ? JSON.parse(stored) : [];
-      if (!list.some((t) => t.projectId === params.projectId && t.name === newTeam.name)) {
-        list.push(newTeam);
-        localStorage.setItem(LOCAL_TEAMS_KEY, JSON.stringify(list));
-      }
-    }
-
     // Insert into Supabase
     if (isSupabaseConfigured()) {
       try {
@@ -88,20 +78,36 @@ export class TeamService {
           .maybeSingle();
 
         if (teamError) {
-          console.warn("Supabase team insert warning:", teamError.message);
-        } else if (teamData?.id) {
+          console.error("Supabase team insert error:", teamError);
+          return { success: false, error: teamError.message || "Failed to create team in database." };
+        }
+
+        if (teamData?.id) {
           const { error: memberError } = await supabase.from("team_members").insert({
             team_id: teamData.id,
             user_id: params.creatorId,
             role_title: roleTitle,
             is_lead: true,
           });
+
           if (memberError) {
-            console.warn("Supabase team member insert warning:", memberError.message);
+            console.error("Supabase team member insert error:", memberError);
+            return { success: false, error: memberError.message || "Failed to add user to team." };
           }
         }
       } catch (err: any) {
-        console.warn("Database team creation exception:", err?.message);
+        console.error("Database team creation exception:", err);
+        return { success: false, error: err?.message || "Failed to create squad." };
+      }
+    }
+
+    // Save in local storage cache
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_TEAMS_KEY);
+      let list: TeamRecord[] = stored ? JSON.parse(stored) : [];
+      if (!list.some((t) => t.projectId === params.projectId && t.name === newTeam.name)) {
+        list.push(newTeam);
+        localStorage.setItem(LOCAL_TEAMS_KEY, JSON.stringify(list));
       }
     }
 
@@ -172,8 +178,8 @@ export class TeamService {
           const filteredLocal = localTeams.filter((t) => !existingIds.has(t.id));
           return [...dbTeams, ...filteredLocal];
         }
-      } catch {
-        // Return local list
+      } catch (err) {
+        console.error("getMyTeams error:", err);
       }
     }
 

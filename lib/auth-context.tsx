@@ -32,7 +32,7 @@ export function formatAuthError(errMessage: string): string {
     return "ACCOUNT ALREADY EXISTS. Please enter your password to log in.";
   }
   if (lower.includes("email not confirmed")) {
-    return "EMAIL NOT CONFIRMED. Please verify your email or sign in.";
+    return "EMAIL NOT CONFIRMED. Please verify your email before logging in.";
   }
   if (lower.includes("password should be at least")) {
     return "PASSWORD TOO SHORT. Must be at least 6 characters.";
@@ -326,9 +326,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { error: "ACCOUNT ALREADY EXISTS. Please enter your password to log in." };
         }
 
-        if (data.user) {
+        // If data.session is null, do NOT authenticate user or allow onboarding
+        if (data.user && !data.session) {
+          setUser(null);
+          setSession(null);
+          return { error: "ACCOUNT CREATED. Please check your email to confirm your account before logging in." };
+        }
+
+        if (data.user && data.session) {
           setUser(data.user);
-          if (data.session) setSession(data.session);
+          setSession(data.session);
           setIsDemoMode(false);
 
           if (typeof window !== "undefined") {

@@ -16,17 +16,7 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     "placeholder-anon-key";
 
-  const allCookies = request.cookies.getAll();
-  const hasSupabaseCookie = allCookies.some(
-    (c) =>
-      c.name.startsWith("sb-") &&
-      (c.name.includes("-auth-token") || c.name.includes("-access-token"))
-  );
-  const hasDemoCookie =
-    request.cookies.get("caca_demo_mode")?.value === "true" ||
-    request.cookies.get("caca_demo_session")?.value === "true";
-
-  let hasSupabaseSession = hasSupabaseCookie;
+  let hasSupabaseSession = false;
 
   try {
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
@@ -57,12 +47,17 @@ export async function middleware(request: NextRequest) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
     if (user) {
       hasSupabaseSession = true;
     }
   } catch {
-    // Fallback to cookie detection
+    hasSupabaseSession = false;
   }
+
+  const hasDemoCookie =
+    request.cookies.get("caca_demo_mode")?.value === "true" ||
+    request.cookies.get("caca_demo_session")?.value === "true";
 
   const isAuthenticated = hasSupabaseSession || hasDemoCookie;
 
