@@ -24,6 +24,7 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
+import { CameraModal } from "@/components/ui/CameraModal";
 
 export default function ProfilePage() {
   const { profile, setProfile, isDemoMode, user } = useAuth();
@@ -52,6 +53,7 @@ export default function ProfilePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -122,6 +124,49 @@ export default function ProfilePage() {
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleTakePhotoClick = () => {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === "function"
+    ) {
+      setIsCameraOpen(true);
+    } else if (cameraInputRef.current) {
+      cameraInputRef.current.click();
+    }
+  };
+
+  const handleCameraCapture = async (file: File) => {
+    setUploadError(null);
+    setIsUploading(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+
+    try {
+      const userId = user?.id || profile.id || `usr_${Date.now()}`;
+      const res = await ProfileService.uploadAndSaveAvatar(userId, file);
+
+      if (res.error) {
+        setUploadError(res.error);
+        setSaveError("COULD NOT SAVE PROFILE PICTURE: " + res.error);
+        setTimeout(() => setSaveError(null), 4000);
+      } else if (res.url) {
+        setAvatarUrl(res.url);
+        const updated = { ...profile, avatarUrl: res.url };
+        setProfile(updated);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3500);
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Failed to upload avatar";
+      setUploadError(msg);
+      setSaveError("COULD NOT SAVE PROFILE PICTURE: " + msg);
+      setTimeout(() => setSaveError(null), 4000);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -289,7 +334,7 @@ export default function ProfilePage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={handleTakePhotoClick}
                 disabled={isUploading}
                 className="text-xs h-7"
               >
@@ -582,6 +627,13 @@ export default function ProfilePage() {
           </Button>
         </div>
       </div>
+
+      {/* Camera Capture Modal */}
+      <CameraModal
+        isOpen={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onCapture={handleCameraCapture}
+      />
     </div>
   );
 }
