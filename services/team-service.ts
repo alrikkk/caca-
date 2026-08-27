@@ -26,10 +26,37 @@ export interface TeamRecord {
   createdAt: string;
 }
 
+export interface TeamMemberDetails {
+  id: string;
+  userId: string;
+  fullName: string;
+  avatarUrl?: string;
+  college?: string;
+  major?: string;
+  roleTitle: string;
+  isLead: boolean;
+  skills?: Array<{ name: string; proficiency: number }>;
+  joinedAt: string;
+}
+
+export interface TeamWithMembers extends TeamRecord {
+  members: TeamMemberDetails[];
+  synergyScore: number;
+}
+
 interface TeamMemberQueryResult {
   id: string;
+  user_id: string;
   role_title: string;
   is_lead: boolean;
+  created_at?: string;
+  profiles?: {
+    id: string;
+    full_name: string;
+    avatar_url: string | null;
+    college: string | null;
+    major: string | null;
+  } | null;
   teams: {
     id: string;
     name: string;
@@ -160,6 +187,7 @@ export class TeamService {
           .from("team_members")
           .select(`
             id,
+            user_id,
             role_title,
             is_lead,
             teams (
@@ -208,5 +236,137 @@ export class TeamService {
     }
 
     return localTeams;
+  }
+
+  /**
+   * Adds a member to a team
+   */
+  static async addMemberToTeam(params: {
+    teamId: string;
+    userId: string;
+    roleTitle?: string;
+    isLead?: boolean;
+  }): Promise<{ success: boolean; error?: string }> {
+    const roleTitle = params.roleTitle || "Squad Member";
+    const isLead = Boolean(params.isLead);
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { error } = await supabase.from("team_members").insert({
+          team_id: params.teamId,
+          user_id: params.userId,
+          role_title: roleTitle,
+          is_lead: isLead,
+        });
+
+        if (error) {
+          console.error("TeamService.addMemberToTeam DB error:", error);
+          return { success: false, error: error.message };
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("TeamService.addMemberToTeam exception:", err);
+        return { success: false, error: msg };
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Updates a team member's assigned role with authorization verification
+   */
+  static async updateMemberRole(params: {
+    teamId: string;
+    userId: string;
+    newRoleTitle: string;
+    requesterId: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    if (!params.newRoleTitle.trim()) {
+      return { success: false, error: "Role title cannot be empty." };
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+
+        // 1. Authorization check: requester must be a lead of this team
+        const { data: requesterMember, error: authError } = await supabase
+          .from("team_members")
+          .select("is_lead")
+          .eq("team_id", params.teamId)
+          .eq("user_id", params.requesterId)
+          .maybeSingle();
+
+        if (authError || !requesterMember?.is_lead) {
+          return { success: false, error: "Only team leads can update member roles." };
+        }
+
+        // 2. Perform role update
+        const { error: updateError } = await supabase
+          .from("team_members")
+          .update({ role_title: params.newRoleTitle.trim() })
+          .eq("team_id", params.teamId)
+          .eq("user_id", params.userId);
+
+        if (updateError) {
+          console.error("TeamService.updateMemberRole DB error:", updateError);
+          return { success: false, error: updateError.message };
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("TeamService.updateMemberRole exception:", err);
+        return { success: false, error: msg };
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Removes a member from a team with authorization verification
+   */
+  static async removeMemberFromTeam(params: {
+    teamId: string;
+    userId: string;
+    requesterId: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+
+        // Authorization check: requester must be lead OR removing self
+        if (params.requesterId !== params.userId) {
+          const { data: requesterMember, error: authError } = await supabase
+            .from("team_members")
+            .select("is_lead")
+            .eq("team_id", params.teamId)
+            .eq("user_id", params.requesterId)
+            .maybeSingle();
+
+          if (authError || !requesterMember?.is_lead) {
+            return { success: false, error: "Only team leads can remove other members." };
+          }
+        }
+
+        const { error: deleteError } = await supabase
+          .from("team_members")
+          .delete()
+          .eq("team_id", params.teamId)
+          .eq("user_id", params.userId);
+
+        if (deleteError) {
+          console.error("TeamService.removeMemberFromTeam DB error:", deleteError);
+          return { success: false, error: deleteError.message };
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("TeamService.removeMemberFromTeam exception:", err);
+        return { success: false, error: msg };
+      }
+    }
+
+    return { success: true };
   }
 }

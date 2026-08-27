@@ -41,6 +41,7 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [isApplied, setIsApplied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [projectApplications, setProjectApplications] = useState<any[]>([]);
 
   // Modals
   const [isMatcherOpen, setIsMatcherOpen] = useState(false);
@@ -49,6 +50,10 @@ export default function ProjectDetailPage() {
   const [isSquadBuilderOpen, setIsSquadBuilderOpen] = useState(false);
   const [isMatchBreakdownOpen, setIsMatchBreakdownOpen] = useState(false);
 
+  // Apply Modal State with Pitch Note
+  const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
+  const [pitchNote, setPitchNote] = useState("");
+
   // Team creation modal
   const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
   const [teamName, setTeamName] = useState("");
@@ -56,19 +61,30 @@ export default function ProjectDetailPage() {
   const [isCreatingSquad, setIsCreatingSquad] = useState(false);
   const [squadError, setSquadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadData = async () => {
-      const p = await ProjectService.getProjectById(projectId, profile);
-      setProject(p);
+  // Responding to applications
+  const [respondingAppId, setRespondingAppId] = useState<string | null>(null);
 
-      const userId = user?.id || profile?.id;
-      if (userId) {
-        const applied = await ApplicationService.hasApplied(projectId, userId);
-        setIsApplied(applied);
+  const userId = user?.id || profile?.id;
+  const isOwner = Boolean(userId && (project?.owner?.id === userId || project?.ownerId === userId));
+
+  const loadData = React.useCallback(async () => {
+    const p = await ProjectService.getProjectById(projectId, profile);
+    setProject(p);
+
+    if (userId) {
+      const applied = await ApplicationService.hasApplied(projectId, userId);
+      setIsApplied(applied);
+
+      if (p && (p.ownerId === userId || p.owner?.id === userId)) {
+        const apps = await ApplicationService.getProjectApplications(projectId, userId);
+        setProjectApplications(apps.filter((a) => a.applicantId !== userId));
       }
-    };
+    }
+  }, [projectId, profile, userId]);
+
+  useEffect(() => {
     loadData();
-  }, [projectId, profile, user?.id]);
+  }, [loadData]);
 
   if (!project) {
     return (
@@ -88,7 +104,6 @@ export default function ProjectDetailPage() {
   );
 
   const handleApply = async () => {
-    const userId = user?.id || profile?.id;
     if (!userId) {
       router.push("/login");
       return;
@@ -99,19 +114,34 @@ export default function ProjectDetailPage() {
     const res = await ApplicationService.applyToProject(
       project.id,
       userId,
-      project.matchScore ?? 85
+      project.matchScore ?? 85,
+      pitchNote.trim() || undefined
     );
     setLoading(false);
     if (res.success) {
       setIsApplied(true);
+      setIsApplyModalOpen(false);
     }
+  };
+
+  const handleRespondApplication = async (appId: string, action: "accepted" | "rejected") => {
+    if (!userId) return;
+    setRespondingAppId(appId);
+    await ApplicationService.respondToApplication({
+      applicationId: appId,
+      projectId: project.id,
+      action,
+      ownerId: userId,
+      roleTitle: "Squad Member",
+    });
+    setRespondingAppId(null);
+    await loadData();
   };
 
   const handleCreateSquad = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamName.trim()) return;
 
-    const userId = user?.id || profile?.id;
     if (!userId) {
       router.push("/login");
       return;
@@ -256,26 +286,107 @@ export default function ProjectDetailPage() {
                 <span>CREATE SQUAD</span>
               </Button>
 
-              <Button
-                variant={isApplied ? "accent" : "primary"}
-                size="md"
-                onClick={handleApply}
-                isLoading={loading}
-                disabled={isApplied}
-                className="text-xs"
-              >
-                {isApplied ? (
-                  <span className="flex items-center gap-1.5">
-                    <Check className="w-3.5 h-3.5" /> APPLIED
-                  </span>
-                ) : (
-                  <span>JOIN</span>
-                )}
-              </Button>
+              {!isOwner && (
+                <Button
+                  variant={isApplied ? "accent" : "primary"}
+                  size="md"
+                  onClick={() => {
+                    if (isApplied) return;
+                    setIsApplyModalOpen(true);
+                  }}
+                  isLoading={loading}
+                  disabled={isApplied}
+                  className="text-xs"
+                >
+                  {isApplied ? (
+                    <span className="flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5" /> APPLIED
+                    </span>
+                  ) : (
+                    <span>JOIN SQUAD</span>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Inbound Project Applications for Project Owner */}
+      {isOwner && projectApplications.length > 0 && (
+        <div className="bg-white border-hard shadow-hard p-5 space-y-3 font-mono text-xs">
+          <div className="flex items-center justify-between border-b-2 border-ink pb-2">
+            <h2 className="font-black uppercase text-ink flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-caca-blue" />
+              <span>INCOMING CANDIDATE APPLICATIONS ({projectApplications.length})</span>
+            </h2>
+          </div>
+
+          <div className="space-y-2.5">
+            {projectApplications.map((app) => (
+              <div
+                key={app.id}
+                className="p-3 bg-canvas-subtle border-hard flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+              >
+                <div className="flex items-start gap-2.5">
+                  <Avatar
+                    name={app.applicant?.fullName || "Applicant"}
+                    src={app.applicant?.avatarUrl}
+                    size="sm"
+                  />
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/profile/${app.applicantId}`}
+                        className="font-bold text-ink uppercase hover:underline"
+                      >
+                        {app.applicant?.fullName || "Candidate"}
+                      </Link>
+                      <Badge variant="lime" size="sm">
+                        {app.compatibilityScore || 85}% FIT
+                      </Badge>
+                      <Badge variant={app.status === "accepted" ? "lime" : "outline"} size="sm">
+                        {app.status.toUpperCase()}
+                      </Badge>
+                    </div>
+                    <p className="text-[10px] text-ink-muted">
+                      {app.applicant?.college} • {app.applicant?.major}
+                    </p>
+                    {app.pitchNote && (
+                      <p className="text-[11px] text-ink italic font-sans pt-0.5">
+                        &ldquo;{app.pitchNote}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {app.status === "pending" && (
+                  <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRespondApplication(app.id, "rejected")}
+                      disabled={respondingAppId === app.id}
+                      className="h-7 text-xs text-red-600 hover:bg-red-50"
+                    >
+                      <span>REJECT</span>
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleRespondApplication(app.id, "accepted")}
+                      disabled={respondingAppId === app.id}
+                      className="h-7 text-xs bg-caca-lime hover:bg-caca-lime/90 text-ink"
+                    >
+                      <span>ACCEPT TO SQUAD</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* WHY YOU MATCH & MISSING Section */}
       <div className="bg-white border-hard shadow-hard p-5 space-y-4 font-mono text-xs">
@@ -569,6 +680,61 @@ export default function ProjectDetailPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Join / Pitch Application Modal */}
+      <Modal
+        isOpen={isApplyModalOpen}
+        onClose={() => setIsApplyModalOpen(false)}
+        title={`APPLY TO ${project.title.toUpperCase()}`}
+      >
+        <div className="space-y-4 font-mono text-xs">
+          <p className="text-ink-muted">
+            Submit your application to the project owner. You can include a short pitch explaining your interest or background.
+          </p>
+
+          <div className="space-y-1.5">
+            <label className="block font-bold uppercase text-ink">
+              OPTIONAL PITCH / NOTE
+            </label>
+            <textarea
+              value={pitchNote}
+              onChange={(e) => setPitchNote(e.target.value)}
+              placeholder="e.g. Excited to contribute to spatial audio. Experienced in Web Audio API & React."
+              rows={3}
+              className="w-full p-2.5 bg-white border-hard font-mono text-xs text-ink focus:outline-none"
+            />
+          </div>
+
+          <div className="p-2.5 bg-canvas-subtle border-hard text-[11px] space-y-0.5">
+            <div className="flex items-center justify-between">
+              <span className="text-ink-muted uppercase">ESTIMATED COMPATIBILITY</span>
+              <span className="font-bold text-ink">{matchResult.overallScore}%</span>
+            </div>
+            <p className="text-[10px] text-ink-muted">
+              Your verified skills and availability will be shared with the project lead.
+            </p>
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsApplyModalOpen(false)}
+            >
+              CANCEL
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleApply}
+              isLoading={loading}
+              disabled={loading}
+            >
+              CONFIRM APPLICATION
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Missing Role Candidate Matcher Modal */}

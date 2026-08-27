@@ -160,4 +160,38 @@ export class NotificationService {
       }
     }
   }
+
+  /**
+   * Mark all notifications for a user as read
+   */
+  static async markAllAsRead(userId?: string): Promise<void> {
+    if (userId && isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { error } = await supabase
+          .from("notifications")
+          .update({ read: true })
+          .eq("user_id", userId);
+
+        if (error) {
+          console.error("NotificationService.markAllAsRead error:", error);
+        }
+      } catch (err) {
+        console.error("NotificationService.markAllAsRead exception:", err);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_NOTIFS_KEY);
+      if (stored) {
+        try {
+          const list: NotificationRecord[] = JSON.parse(stored);
+          const updated = list.map((n) => ({ ...n, read: true }));
+          localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(updated));
+        } catch (err) {
+          console.error("NotificationService.markAllAsRead (local update) failed:", err);
+        }
+      }
+    }
+  }
 }

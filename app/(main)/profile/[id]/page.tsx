@@ -3,12 +3,17 @@
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 import { StudentProfile } from "@/types/user";
 import { ProfileService } from "@/services/profile-service";
+import { TeamService, TeamRecord } from "@/services/team-service";
+import { InvitationService } from "@/services/invitation-service";
 import { MOCK_PROJECTS } from "@/lib/mock-data";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import {
   ArrowLeft,
   Github,
@@ -17,14 +22,27 @@ import {
   Clock,
   Briefcase,
   Sparkles,
+  UserPlus,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 
 export default function StudentProfileDetailPage() {
   const params = useParams();
   const userId = params.id as string;
+  const { profile: activeUser } = useAuth();
 
   const [student, setStudent] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userTeams, setUserTeams] = useState<TeamRecord[]>([]);
+
+  // Invite Modal State
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const [inviteRoleTitle, setInviteRoleTitle] = useState<string>("Squad Specialist");
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteFeedback, setInviteFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     const fetchStudent = async () => {
@@ -40,6 +58,55 @@ export default function StudentProfileDetailPage() {
     };
     fetchStudent();
   }, [userId]);
+
+  useEffect(() => {
+    const loadTeams = async () => {
+      if (activeUser?.id) {
+        const teams = await TeamService.getMyTeams(activeUser.id);
+        setUserTeams(teams);
+        if (teams.length > 0) {
+          setSelectedTeamId(teams[0].id);
+        }
+      }
+    };
+    loadTeams();
+  }, [activeUser?.id]);
+
+  const handleSendInvite = async () => {
+    if (!student || !activeUser || !selectedTeamId) return;
+
+    const chosenTeam = userTeams.find((t) => t.id === selectedTeamId);
+    if (!chosenTeam) return;
+
+    setIsInviting(true);
+    setInviteFeedback(null);
+
+    const res = await InvitationService.sendInvitation({
+      teamId: chosenTeam.id,
+      teamName: chosenTeam.name,
+      projectId: chosenTeam.projectId,
+      projectName: chosenTeam.projectName,
+      inviterId: activeUser.id,
+      inviterName: activeUser.fullName,
+      inviteeId: student.id,
+      inviteeName: student.fullName,
+      roleTitle: inviteRoleTitle.trim() || "Squad Specialist",
+    });
+
+    setIsInviting(false);
+
+    if (res.success) {
+      setInviteFeedback({
+        type: "success",
+        message: `Invitation sent to ${student.fullName}! ✓`,
+      });
+    } else {
+      setInviteFeedback({
+        type: "error",
+        message: res.error || "Failed to send invitation.",
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -71,24 +138,42 @@ export default function StudentProfileDetailPage() {
 
   const isMockStudent = student.id.startsWith("usr_");
   const studentProjects = MOCK_PROJECTS.filter((p) => p.ownerId === student.id);
+  const isOwnProfile = activeUser?.id === student.id;
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-2xl mx-auto pb-12">
       {/* Top Navigation */}
       <div className="flex items-center justify-between border-b-2 border-ink pb-3">
         <Link
-          href="/feed"
+          href="/discover"
           className="inline-flex items-center gap-1.5 font-mono text-xs font-bold uppercase text-ink hover:underline"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>BACK TO FEED</span>
+          <span>BACK TO DISCOVERY</span>
         </Link>
 
-        {isMockStudent && (
-          <Badge variant="lime" size="sm">
-            DEMO PROFILE
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {isMockStudent && (
+            <Badge variant="lime" size="sm">
+              DEMO PROFILE
+            </Badge>
+          )}
+
+          {!isOwnProfile && (
+            <Button
+              variant="accent"
+              size="sm"
+              onClick={() => {
+                setIsInviteModalOpen(true);
+                setInviteFeedback(null);
+              }}
+              className="flex items-center gap-1 text-xs"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>INVITE TO SQUAD</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Identity Card */}
@@ -304,6 +389,93 @@ export default function StudentProfileDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Invite to Squad Modal */}
+      <Modal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        title={`INVITE ${student.fullName.toUpperCase()} TO SQUAD`}
+        className="max-w-md"
+      >
+        <div className="space-y-4 font-mono text-xs">
+          {userTeams.length > 0 ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="block font-bold uppercase text-ink">
+                  SELECT SQUAD
+                </label>
+                <select
+                  value={selectedTeamId}
+                  onChange={(e) => setSelectedTeamId(e.target.value)}
+                  className="w-full h-10 px-3 bg-white border-hard uppercase text-ink focus:outline-none"
+                  required
+                >
+                  {userTeams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.projectName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-bold uppercase text-ink">
+                  TARGET ROLE TITLE
+                </label>
+                <Input
+                  value={inviteRoleTitle}
+                  onChange={(e) => setInviteRoleTitle(e.target.value)}
+                  placeholder="e.g. Lead Frontend Architect, ML Lead"
+                  required
+                />
+              </div>
+
+              {inviteFeedback && (
+                <div
+                  className={`p-2.5 border-hard font-bold uppercase ${
+                    inviteFeedback.type === "success"
+                      ? "bg-caca-lime text-ink"
+                      : "bg-red-50 text-red-600 border-red-500"
+                  }`}
+                >
+                  {inviteFeedback.message}
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsInviteModalOpen(false)}
+                >
+                  CANCEL
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSendInvite}
+                  isLoading={isInviting}
+                  disabled={isInviting || !inviteRoleTitle.trim()}
+                >
+                  SEND INVITATION
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 text-center space-y-3">
+              <p className="text-ink font-bold">You don&apos;t have any active squads yet.</p>
+              <p className="text-[11px] text-ink-muted">
+                Create a squad for your project first, then invite candidates to join.
+              </p>
+              <Link href="/teams">
+                <Button variant="accent" size="sm">
+                  GO TO SQUADS →
+                </Button>
+              </Link>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -222,4 +222,224 @@ export class ApplicationService {
       return { ...app, project: proj };
     });
   }
+
+  /**
+   * Fetch all applications submitted to a project owned by the user
+   */
+  static async getProjectApplications(projectId: string, ownerId?: string): Promise<ProjectApplication[]> {
+    if (!projectId) return [];
+
+    let localApps: ProjectApplication[] = [];
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_APPLICATIONS_KEY);
+      if (stored) {
+        try {
+          localApps = JSON.parse(stored).filter(
+            (a: ProjectApplication) =>
+              a.projectId === projectId || toProjectUuid(a.projectId) === toProjectUuid(projectId)
+          );
+        } catch (err) {
+          console.error("ApplicationService.getProjectApplications local parse error:", err);
+        }
+      }
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const uuid = toProjectUuid(projectId);
+        const { data: dbApps, error } = await supabase
+          .from("applications")
+          .select(`
+            id,
+            project_id,
+            applicant_id,
+            status,
+            compatibility_score,
+            pitch_note,
+            created_at,
+            profiles!applications_applicant_id_fkey ( id, full_name, avatar_url, college, major, experience_level )
+          `)
+          .eq("project_id", uuid);
+
+        if (error) {
+          console.error("ApplicationService.getProjectApplications DB error:", error);
+        } else if (dbApps) {
+          const mapped: ProjectApplication[] = dbApps.map((row: any) => ({
+            id: row.id,
+            projectId,
+            applicantId: row.applicant_id,
+            status: row.status,
+            compatibilityScore: Number(row.compatibility_score || 85),
+            pitchNote: row.pitch_note || undefined,
+            createdAt: row.created_at,
+            applicant: row.profiles
+              ? {
+                  id: row.profiles.id,
+                  email: "",
+                  fullName: row.profiles.full_name,
+                  avatarUrl: row.profiles.avatar_url || undefined,
+                  college: row.profiles.college || "University",
+                  major: row.profiles.major || "Computer Science",
+                  gradYear: 2026,
+                  experienceLevel: row.profiles.experience_level || "junior",
+                  workingStyle: "collaborative",
+                  availability: {
+                    hoursPerWeek: 10,
+                    timezone: "UTC",
+                    prefersRemote: true,
+                    weekendAvailability: true,
+                    weekdayEvenings: true,
+                  },
+                  skills: [],
+                  interests: [],
+                }
+              : undefined,
+          }));
+
+          const dbIds = new Set(mapped.map((a) => a.id));
+          const remainingLocal = localApps.filter((a) => !dbIds.has(a.id));
+          return [...mapped, ...remainingLocal];
+        }
+      } catch (err) {
+        console.error("ApplicationService.getProjectApplications exception:", err);
+      }
+    }
+
+    return localApps;
+  }
+
+  /**
+   * Review & respond to a project application (accept or reject)
+   */
+  static async respondToApplication(params: {
+    applicationId: string;
+    projectId: string;
+    action: "accepted" | "rejected";
+    ownerId: string;
+    roleTitle?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    const { applicationId, projectId, action, ownerId, roleTitle } = params;
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const projUuid = toProjectUuid(projectId);
+
+        // 1. Get application details
+        const { data: appData, error: fetchErr } = await supabase
+          .from("applications")
+          .select("*, projects(title, owner_id)")
+          .eq("id", applicationId)
+          .maybeSingle();
+
+        if (fetchErr || !appData) {
+          console.error("ApplicationService.respondToApplication fetch error:", fetchErr);
+          return { success: false, error: "Application not found." };
+        }
+
+        // 2. Authorization check: must be project owner
+        if (appData.projects?.owner_id && appData.projects.owner_id !== ownerId) {
+          return { success: false, error: "Only the project owner can process applications." };
+        }
+
+        // 3. Update application status
+        const { error: updateErr } = await supabase
+          .from("applications")
+          .update({ status: action })
+          .eq("id", applicationId);
+
+        if (updateErr) {
+          console.error("ApplicationService.respondToApplication update error:", updateErr);
+          return { success: false, error: updateErr.message };
+        }
+
+        // 4. On acceptance, find or create team and enroll applicant
+        if (action === "accepted") {
+          let teamId: string | null = null;
+          const { data: existingTeam } = await supabase
+            .from("teams")
+            .select("id")
+            .eq("project_id", projUuid)
+            .maybeSingle();
+
+          if (existingTeam?.id) {
+            teamId = existingTeam.id;
+          } else {
+            const { data: createdTeam } = await supabase
+              .from("teams")
+              .insert({
+                project_id: projUuid,
+                name: `${appData.projects?.title || "Project"} Squad`,
+                team_compatibility_score: appData.compatibility_score || 90,
+              })
+              .select("id")
+              .maybeSingle();
+
+            if (createdTeam?.id) {
+              teamId = createdTeam.id;
+              // Add owner as squad lead
+              await supabase.from("team_members").insert({
+                team_id: createdTeam.id,
+                user_id: ownerId,
+                role_title: "Squad Lead",
+                is_lead: true,
+              });
+            }
+          }
+
+          if (teamId) {
+            await supabase.from("team_members").upsert({
+              team_id: teamId,
+              user_id: appData.applicant_id,
+              role_title: roleTitle || "Squad Member",
+              is_lead: false,
+            });
+          }
+
+          // In-app notification to applicant
+          const { NotificationService } = await import("./notification-service");
+          await NotificationService.createNotification({
+            userId: appData.applicant_id,
+            title: "Application Accepted! 🎉",
+            message: `Your application to join "${appData.projects?.title || "the project"}" was accepted!`,
+            type: "application_status",
+            link: "/teams",
+          });
+        } else {
+          // On rejection notification
+          const { NotificationService } = await import("./notification-service");
+          await NotificationService.createNotification({
+            userId: appData.applicant_id,
+            title: "Application Update",
+            message: `Your application to "${appData.projects?.title || "the project"}" was reviewed.`,
+            type: "application_status",
+            link: "/teams",
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("ApplicationService.respondToApplication exception:", err);
+        return { success: false, error: msg };
+      }
+    }
+
+    // Local cache update
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(LOCAL_APPLICATIONS_KEY);
+        if (stored) {
+          const list: ProjectApplication[] = JSON.parse(stored);
+          const updated = list.map((a) =>
+            a.id === applicationId ? { ...a, status: action } : a
+          );
+          localStorage.setItem(LOCAL_APPLICATIONS_KEY, JSON.stringify(updated));
+        }
+      } catch (err) {
+        console.error("ApplicationService.respondToApplication local update error:", err);
+      }
+    }
+
+    return { success: true };
+  }
 }
