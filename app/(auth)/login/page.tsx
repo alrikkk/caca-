@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Login3DBackground } from "@/components/auth/Login3DBackground";
 import { UserPlus, ArrowRight } from "lucide-react";
 
 export default function UnifiedAuthPage() {
@@ -99,8 +100,9 @@ export default function UnifiedAuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-canvas flex flex-col justify-center items-center p-4 bg-grid-subtle">
-      <div className="w-full max-w-sm bg-white border-hard shadow-hard-xl p-6 sm:p-8 space-y-5">
+    <div className="relative min-h-screen bg-canvas flex flex-col justify-center items-center p-4 overflow-hidden">
+      <Login3DBackground />
+      <div className="w-full max-w-sm bg-white border-hard shadow-hard-xl p-6 sm:p-8 space-y-5 relative z-10">
         {/* Brand Header */}
         <div className="text-center border-b-2 border-ink pb-3.5">
           <span className="bg-ink text-caca-lime px-3 py-1 border-hard text-2xl font-black font-mono inline-block">

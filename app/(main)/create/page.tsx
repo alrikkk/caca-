@@ -1,24 +1,34 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { ProjectService } from "@/services/project-service";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { getAIProvider } from "@/ai/mock-provider";
 import { ExtractedProjectRequirements } from "@/types/ai";
-import { Sparkles, Check } from "lucide-react";
+import { Sparkles, Check, CheckCircle2, Image as ImageIcon } from "lucide-react";
 
 export default function CreateProjectPage() {
+  const router = useRouter();
+  const { profile, isDemoMode } = useAuth();
   const [description, setDescription] = useState(
     "Building an autonomous underwater robot for environmental water sampling in San Francisco Bay. Need embedded C++ for telemetry, PyTorch ML for real-time algae classification, and full-stack Next.js for lab portal."
   );
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishedSuccess, setPublishedSuccess] = useState(false);
   const [extracted, setExtracted] =
     useState<ExtractedProjectRequirements | null>(null);
 
   const [title, setTitle] = useState("");
   const [tagline, setTagline] = useState("");
   const [category, setCategory] = useState("Robotics & IoT");
+  const [bannerUrl, setBannerUrl] = useState(
+    "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&auto=format&fit=crop&q=80"
+  );
   const [hoursPerWeek, setHoursPerWeek] = useState(12);
   const [durationWeeks, setDurationWeeks] = useState(8);
   const [maxTeamSize, setMaxTeamSize] = useState(4);
@@ -40,6 +50,46 @@ export default function CreateProjectPage() {
       console.error(err);
     } finally {
       setIsExtracting(false);
+    }
+  };
+
+  const handlePublish = async (status: "published" | "draft" = "published") => {
+    if (!title.trim() || !description.trim()) return;
+    setIsPublishing(true);
+
+    try {
+      const res = await ProjectService.createProject(
+        {
+          title: title.trim(),
+          tagline: tagline.trim() || tagline,
+          description: description.trim(),
+          category: category.trim(),
+          bannerUrl: bannerUrl.trim() || undefined,
+          hoursPerWeek,
+          durationWeeks,
+          maxTeamSize,
+          status,
+          requiredSkills: extracted?.skills.map((s) => ({
+            name: s.name,
+            requiredProficiency: s.requiredProficiency,
+            importance: s.importance as any,
+          })) || [],
+          missingRoles: extracted?.rolesNeeded || ["Core Engineer"],
+        },
+        profile,
+        isDemoMode
+      );
+
+      if (res.success) {
+        setPublishedSuccess(true);
+        setTimeout(() => {
+          router.push("/feed");
+        }, 600);
+      }
+    } catch (err) {
+      console.error("Failed to publish project:", err);
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -108,6 +158,13 @@ export default function CreateProjectPage() {
             onChange={(e) => setTagline(e.target.value)}
           />
 
+          <Input
+            label="IMAGE BANNER URL (OPTIONAL)"
+            value={bannerUrl}
+            onChange={(e) => setBannerUrl(e.target.value)}
+            placeholder="https://..."
+          />
+
           <div className="grid grid-cols-3 gap-3">
             <Input
               label="TEAM SIZE"
@@ -152,16 +209,32 @@ export default function CreateProjectPage() {
             </div>
           </div>
 
-          <div className="pt-2 flex justify-end">
+          {publishedSuccess && (
+            <div className="p-3 bg-caca-lime border-hard flex items-center gap-2 font-mono text-xs font-bold text-ink uppercase animate-in-fade">
+              <CheckCircle2 className="w-4 h-4 text-ink" />
+              <span>PROJECT PUBLISHED SUCCESSFULLY ✓ REDIRECTING TO FEED...</span>
+            </div>
+          )}
+
+          <div className="pt-2 flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => handlePublish("draft")}
+              isLoading={isPublishing}
+              disabled={isPublishing || publishedSuccess || !title.trim()}
+            >
+              <span>SAVE DRAFT</span>
+            </Button>
+
             <Button
               variant="primary"
               size="md"
-              onClick={() => {
-                alert("Project created.");
-                window.location.href = "/feed";
-              }}
+              onClick={() => handlePublish("published")}
+              isLoading={isPublishing}
+              disabled={isPublishing || publishedSuccess || !title.trim()}
             >
-              <span>PUBLISH</span>
+              <span>{publishedSuccess ? "PUBLISHED" : "SHIP / PUBLISH →"}</span>
             </Button>
           </div>
         </div>

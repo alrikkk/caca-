@@ -23,6 +23,8 @@ import {
   X,
   AlertCircle,
   Loader2,
+  Sparkles,
+  FileText,
 } from "lucide-react";
 import { CameraModal } from "@/components/ui/CameraModal";
 
@@ -30,6 +32,7 @@ export default function ProfilePage() {
   const { profile, setProfile, isDemoMode, user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState("");
   const [college, setCollege] = useState("");
@@ -39,11 +42,14 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [resumeUrl, setResumeUrl] = useState<string | undefined>(undefined);
   const [hoursPerWeek, setHoursPerWeek] = useState(12);
   const [workingStyle, setWorkingStyle] = useState<WorkingStyle>("collaborative");
   const [githubUrl, setGithubUrl] = useState("");
   const [portfolioUrl, setPortfolioUrl] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [discordUrl, setDiscordUrl] = useState("");
+  const [instagramUrl, setInstagramUrl] = useState("");
   const [skills, setSkills] = useState<UserSkill[]>([]);
   const [openTo, setOpenTo] = useState<string[]>(["HACKATHONS", "STARTUPS"]);
   const [availabilityStatus, setAvailabilityStatus] = useState<"AVAILABLE" | "LIMITED" | "NOT_LOOKING">("AVAILABLE");
@@ -54,6 +60,7 @@ export default function ProfilePage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingResume, setIsUploadingResume] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
 
@@ -67,11 +74,14 @@ export default function ProfilePage() {
       setBio(profile.bio || "");
       setPhoneNumber(profile.phoneNumber || "");
       setAvatarUrl(profile.avatarUrl);
+      setResumeUrl(profile.resumeUrl);
       setHoursPerWeek(profile.availability?.hoursPerWeek || 10);
       setWorkingStyle(profile.workingStyle || "collaborative");
       setGithubUrl(profile.githubUrl || "");
       setPortfolioUrl(profile.portfolioUrl || "");
       setLinkedinUrl(profile.linkedinUrl || "");
+      setDiscordUrl(profile.discordUrl || "");
+      setInstagramUrl(profile.instagramUrl || "");
       setSkills(profile.skills || []);
       setOpenTo(profile.openTo || ["HACKATHONS", "STARTUPS"]);
       setAvailabilityStatus(profile.availabilityStatus || "AVAILABLE");
@@ -215,6 +225,33 @@ export default function ProfilePage() {
     setSkills(skills.filter((s) => s.id !== id));
   };
 
+  const handleResumeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+
+    setIsUploadingResume(true);
+    setUploadError(null);
+
+    const activeId = user?.id || profile.id;
+    const res = await ProfileService.uploadResume(activeId, file, isDemoMode);
+    setIsUploadingResume(false);
+
+    if (res.error) {
+      setUploadError(res.error);
+    } else if (res.url) {
+      setResumeUrl(res.url);
+      setProfile({ ...profile, resumeUrl: res.url });
+    }
+  };
+
+  const handleRemoveResume = async () => {
+    if (!profile) return;
+    const activeId = user?.id || profile.id;
+    await ProfileService.removeResume(activeId, isDemoMode);
+    setResumeUrl(undefined);
+    setProfile({ ...profile, resumeUrl: undefined });
+  };
+
   const handleSave = async () => {
     if (!profile || isSaving) return;
     setIsSaving(true);
@@ -239,10 +276,13 @@ export default function ProfilePage() {
       bio: bio.trim() || undefined,
       phoneNumber: phoneNumber.trim() || undefined,
       avatarUrl: avatarUrl || undefined,
+      resumeUrl: resumeUrl || undefined,
       workingStyle,
       githubUrl: githubUrl.trim() || undefined,
       portfolioUrl: portfolioUrl.trim() || undefined,
       linkedinUrl: cleanLinkedin || undefined,
+      discordUrl: discordUrl.trim() || undefined,
+      instagramUrl: instagramUrl.trim() || undefined,
       skills,
       openTo,
       availabilityStatus,
@@ -594,6 +634,64 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* PDF Resume */}
+        <div className="space-y-3 pt-2 border-t border-ink/10">
+          <label className="block text-xs font-mono font-bold uppercase text-ink flex items-center justify-between">
+            <span>STUDENT RESUME (PDF)</span>
+            {resumeUrl && (
+              <span className="text-[10px] text-caca-blue font-mono font-bold">PDF ATTACHED ✓</span>
+            )}
+          </label>
+
+          <input
+            type="file"
+            ref={resumeInputRef}
+            onChange={handleResumeFileChange}
+            accept=".pdf,application/pdf"
+            className="hidden"
+          />
+
+          <div className="p-3.5 bg-canvas-subtle border-hard flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-white border-hard text-ink shrink-0">
+                <FileText className="w-4 h-4 text-ink" />
+              </div>
+              <div>
+                <p className="font-bold text-ink uppercase">
+                  {resumeUrl ? "STUDENT_RESUME.PDF" : "NO RESUME ATTACHED"}
+                </p>
+                <span className="text-[10px] text-ink-muted">
+                  {resumeUrl ? "Attached to public profile (Max 5MB)" : "Upload PDF for squad leads & hackathon partners"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => resumeInputRef.current?.click()}
+                isLoading={isUploadingResume}
+                className="text-xs h-7"
+              >
+                <span>{resumeUrl ? "REPLACE RESUME" : "UPLOAD PDF RESUME"}</span>
+              </Button>
+
+              {resumeUrl && (
+                <button
+                  type="button"
+                  onClick={handleRemoveResume}
+                  className="p-1.5 border-hard bg-white hover:bg-red-50 text-red-600 text-xs"
+                  title="Remove Resume"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Social Links */}
         <div className="space-y-3 pt-2 border-t border-ink/10">
           <label className="block text-xs font-mono font-bold uppercase text-ink">
@@ -623,6 +721,24 @@ export default function ProfilePage() {
               value={portfolioUrl}
               onChange={(e) => setPortfolioUrl(e.target.value)}
               placeholder="https://myportfolio.com"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="DISCORD HANDLE"
+              type="text"
+              value={discordUrl}
+              onChange={(e) => setDiscordUrl(e.target.value)}
+              placeholder="username#1234 or @username"
+            />
+
+            <Input
+              label="INSTAGRAM URL / HANDLE"
+              type="text"
+              value={instagramUrl}
+              onChange={(e) => setInstagramUrl(e.target.value)}
+              placeholder="https://instagram.com/username"
             />
           </div>
         </div>

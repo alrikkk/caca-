@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
+import { CameraModal } from "@/components/ui/CameraModal";
 import { Plus, Trash2, ArrowRight, Camera, Upload, X, AlertCircle } from "lucide-react";
 
 export default function OnboardingPage() {
@@ -40,6 +41,7 @@ export default function OnboardingPage() {
   const [newSkillProf, setNewSkillProf] = useState(4);
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,6 +61,33 @@ export default function OnboardingPage() {
       setUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (cameraInputRef.current) cameraInputRef.current.value = "";
+    }
+  };
+
+  const handleTakePhotoClick = () => {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === "function"
+    ) {
+      setIsCameraOpen(true);
+    } else if (cameraInputRef.current) {
+      cameraInputRef.current.click();
+    }
+  };
+
+  const handleCameraCapture = async (file: File) => {
+    setUploadingAvatar(true);
+    try {
+      const tempId = user?.id || `usr_${Date.now()}`;
+      const res = await ProfileService.uploadAvatar(tempId, file, isDemoMode);
+      if (res.url) {
+        setAvatarUrl(res.url);
+      }
+    } catch {
+      // Ignored
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
@@ -148,7 +177,7 @@ export default function OnboardingPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => cameraInputRef.current?.click()}
+                  onClick={handleTakePhotoClick}
                   disabled={uploadingAvatar}
                   className="px-2.5 py-1 border-hard bg-white hover:bg-ink hover:text-white font-mono text-[11px] font-bold uppercase transition-colors flex items-center gap-1"
                 >
@@ -388,6 +417,12 @@ export default function OnboardingPage() {
           </Button>
         </form>
       </div>
+
+      <CameraModal
+        isOpen={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onCapture={handleCameraCapture}
+      />
     </div>
   );
 }

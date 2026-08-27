@@ -1019,4 +1019,186 @@ export class ProfileService {
 
     return { success: true };
   }
+
+  /**
+   * Uploads a student PDF resume to Supabase Storage with size and MIME validation
+   */
+  static async uploadResume(
+    userId: string,
+    file: File,
+    isDemoMode?: boolean
+  ): Promise<{ success: boolean; url?: string; error?: string }> {
+    // Validate file type
+    const isPdf =
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      return { success: false, error: "Only PDF documents are supported for resumes." };
+    }
+
+    // Validate file size (max 5MB)
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      return { success: false, error: "Resume file size exceeds the 5MB limit." };
+    }
+
+    let isDemo = Boolean(isDemoMode);
+    if (!isDemo && typeof window !== "undefined") {
+      isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
+    }
+
+    let resumeUrl = URL.createObjectURL(file);
+
+    if (isSupabaseConfigured() && !isDemo) {
+      try {
+        const supabase = createClient();
+        const fileExt = "pdf";
+        const filePath = `resumes/${userId}/${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("resumes")
+          .upload(filePath, file, {
+            upsert: true,
+            contentType: "application/pdf",
+          });
+
+        if (uploadError) {
+          console.error("Supabase resume storage error:", uploadError);
+          return { success: false, error: "Could not upload resume to cloud storage." };
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("resumes")
+          .getPublicUrl(filePath);
+
+        resumeUrl = publicUrlData.publicUrl;
+
+        // Update profile in DB
+        const { error: dbError } = await supabase
+          .from("profiles")
+          .update({ resume_url: resumeUrl })
+          .eq("id", userId);
+
+        if (dbError) {
+          console.error("Failed to update profile with resume_url:", dbError);
+        }
+      } catch (err) {
+        console.error("uploadResume exception:", err);
+      }
+    }
+
+    // Update local cache
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          parsed.resumeUrl = resumeUrl;
+          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
+        } catch (err) {
+          console.error("ProfileService.uploadResume (local update) failed:", err);
+        }
+      }
+    }
+
+    return { success: true, url: resumeUrl };
+  }
+
+  /**
+   * Removes a student's resume reference
+   */
+  static async removeResume(
+    userId: string,
+    isDemoMode?: boolean
+  ): Promise<{ success: boolean; error?: string }> {
+    let isDemo = Boolean(isDemoMode);
+    if (!isDemo && typeof window !== "undefined") {
+      isDemo =
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true");
+    }
+
+    if (isSupabaseConfigured() && !isDemo) {
+      try {
+        const supabase = createClient();
+        await supabase
+          .from("profiles")
+          .update({ resume_url: null })
+          .eq("id", userId);
+      } catch (err) {
+        console.error("removeResume exception:", err);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          parsed.resumeUrl = undefined;
+          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
+        } catch (err) {
+          console.error("ProfileService.removeResume (local cache update) failed:", err);
+        }
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Calculates profile completeness percentage, quality tier, and actionable suggestions.
+   */
+  static calculateCompleteness(profile: StudentProfile | null): {
+    score: number;
+    tier: "BASIC" | "COMPLETE" | "HIGH QUALITY";
+    missingRecommendations: string[];
+  } {
+    if (!profile) {
+      return { score: 0, tier: "BASIC", missingRecommendations: ["Set up your student profile"] };
+    }
+
+    let score = 0;
+    const missing: string[] = [];
+
+    // Core fields (50 pts)
+    if (profile.fullName && profile.fullName.trim()) score += 15;
+    else missing.push("Add full name");
+
+    if (profile.college && profile.college.trim()) score += 15;
+    else missing.push("Add university / college");
+
+    if (profile.major && profile.major.trim()) score += 10;
+    else missing.push("Add major");
+
+    if (profile.experienceLevel) score += 10;
+
+    // Skills & Availability (30 pts)
+    if (profile.skills && profile.skills.length >= 3) score += 20;
+    else if (profile.skills && profile.skills.length > 0) {
+      score += 10;
+      missing.push("Add at least 3 verified skills");
+    } else {
+      missing.push("Add skills");
+    }
+
+    if (profile.availability && profile.availability.hoursPerWeek > 0) score += 10;
+    else missing.push("Set weekly hours availability");
+
+    // Engagement & Polish (20 pts)
+    if (profile.avatarUrl) score += 10;
+    else missing.push("Upload profile avatar or photo");
+
+    if (profile.bio && profile.bio.trim().length >= 20) score += 5;
+    else missing.push("Add a detailed bio");
+
+    if (profile.githubUrl || profile.linkedinUrl || profile.portfolioUrl) score += 5;
+    else missing.push("Add portfolio, GitHub, or LinkedIn");
+
+    const tier = score >= 85 ? "HIGH QUALITY" : score >= 60 ? "COMPLETE" : "BASIC";
+
+    return { score, tier, missingRecommendations: missing };
+  }
 }
+

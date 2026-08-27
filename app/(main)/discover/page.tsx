@@ -1,23 +1,67 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { MOCK_PROJECTS, MOCK_STUDENTS } from "@/lib/mock-data";
 import { ProfileService } from "@/services/profile-service";
 import { StudentProfile } from "@/types/user";
 import { SearchIntentResult } from "@/types/ai";
+import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
-import { Search, Loader2, Sparkles, Filter, Check } from "lucide-react";
+import { VoiceInputButton } from "@/components/ui/VoiceInputButton";
+import { Search, Loader2, Sparkles, Filter, Check, History, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const RECENT_SEARCHES_KEY = "caca_recent_searches";
+
 export default function DiscoverPage() {
+  const { profile } = useAuth();
   const [tab, setTab] = useState<"projects" | "students">("projects");
   const [query, setQuery] = useState("");
   const [dbStudents, setDbStudents] = useState<StudentProfile[]>(MOCK_STUDENTS);
   const [isSearchingStudents, setIsSearchingStudents] = useState(false);
   const [searchIntent, setSearchIntent] = useState<SearchIntentResult | null>(null);
+  const [recentSearches, setRecentSearches] = useState<string[]>([
+    "Python developer",
+    "React designer",
+    "Healthcare ML",
+    "Systems engineer",
+  ]);
+
+  // Load recent searches from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(RECENT_SEARCHES_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setRecentSearches(parsed);
+          }
+        }
+      } catch {
+        // Ignored
+      }
+    }
+  }, []);
+
+  const saveSearchTerm = useCallback((term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    setRecentSearches((prev) => {
+      const updated = Array.from(new Set([trimmed, ...prev])).slice(0, 6);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
+        } catch {
+          // Ignored
+        }
+      }
+      return updated;
+    });
+  }, []);
 
   // Search real students from Supabase or candidates pool on query change
   useEffect(() => {
@@ -33,6 +77,8 @@ export default function DiscoverPage() {
             setIsSearchingStudents(false);
             return;
           }
+
+          saveSearchTerm(q);
 
           // If multi-word concept query, parse search intent
           if (q.split(/\s+/).length > 1) {
@@ -63,7 +109,7 @@ export default function DiscoverPage() {
       }, 200);
       return () => clearTimeout(timer);
     }
-  }, [query, tab]);
+  }, [query, tab, saveSearchTerm]);
 
   const matchingProjects = MOCK_PROJECTS.filter(
     (p) =>
@@ -124,7 +170,7 @@ export default function DiscoverPage() {
 
       {/* Search Bar */}
       <div className="space-y-2">
-        <div className="relative">
+        <div className="relative flex items-center">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
             {isSearchingStudents ? (
               <Loader2 className="w-4 h-4 text-ink animate-spin" />
@@ -141,13 +187,54 @@ export default function DiscoverPage() {
                 ? "SEARCH PROJECTS, SKILLS, CATEGORIES..."
                 : "SEARCH CONCEPTS: 'REACT DESIGNER', 'ML STUDENT EVENINGS'..."
             }
-            className="w-full h-11 pl-10 pr-4 bg-white border-hard font-mono text-xs uppercase text-ink placeholder:text-ink-faint shadow-hard focus:outline-none focus:bg-canvas-subtle"
+            className="w-full h-11 pl-10 pr-12 bg-white border-hard font-mono text-xs uppercase text-ink placeholder:text-ink-faint shadow-hard focus:outline-none focus:bg-canvas-subtle"
           />
+          <div className="absolute right-1.5 flex items-center">
+            <VoiceInputButton
+              onTranscript={(transcript) =>
+                setQuery((prev) => (prev ? `${prev} ${transcript}` : transcript))
+              }
+              size="sm"
+            />
+          </div>
         </div>
+
+        {/* Recent Search History Chips */}
+        {recentSearches.length > 0 && !query && (
+          <div className="space-y-1 pt-0.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-ink-muted uppercase font-bold flex items-center gap-1">
+                <History className="w-3 h-3 text-ink" />
+                <span>RECENT SEARCHES:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecentSearches([]);
+                  if (typeof window !== "undefined") localStorage.removeItem(RECENT_SEARCHES_KEY);
+                }}
+                className="text-[9px] font-mono text-ink-muted hover:text-red-600 uppercase"
+              >
+                CLEAR HISTORY
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {recentSearches.map((term) => (
+                <button
+                  key={term}
+                  onClick={() => setQuery(term)}
+                  className="px-2 py-0.5 bg-canvas-subtle border-hard-sm text-[10px] font-mono font-bold uppercase text-ink hover:bg-white hover:border-ink transition-colors flex items-center gap-1"
+                >
+                  <span>{term}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Concept query suggestions */}
         {tab === "students" && !query && (
-          <div className="space-y-1">
+          <div className="space-y-1 pt-1">
             <span className="text-[10px] font-mono text-ink-muted uppercase font-bold">
               TRY NATURAL LANGUAGE SEARCH CONCEPTS:
             </span>
@@ -209,92 +296,136 @@ export default function DiscoverPage() {
       {/* Projects Results */}
       {tab === "projects" && (
         <div className="space-y-3 pt-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {matchingProjects.map((p) => (
-              <div
-                key={p.id}
-                className="bg-white border-hard shadow-hard p-4 flex flex-col justify-between space-y-3"
-              >
-                <div className="space-y-1">
-                  <div className="flex justify-between items-start">
-                    <Badge variant="lime" size="sm">
-                      {p.category}
-                    </Badge>
-                    <span className="font-mono text-xs font-black text-ink">
-                      MATCH {p.matchScore}%
-                    </span>
+          {matchingProjects.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {matchingProjects.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-white border-hard shadow-hard p-4 flex flex-col justify-between space-y-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-start">
+                      <Badge variant="lime" size="sm">
+                        {p.category}
+                      </Badge>
+                      <span className="font-mono text-xs font-black text-ink">
+                        MATCH {p.matchScore}%
+                      </span>
+                    </div>
+                    <h3 className="font-mono font-black text-sm uppercase text-ink">
+                      {p.title}
+                    </h3>
+                    <p className="text-xs font-mono text-ink-muted line-clamp-2">
+                      {p.tagline}
+                    </p>
                   </div>
-                  <h3 className="font-mono font-black text-sm uppercase text-ink">
-                    {p.title}
-                  </h3>
-                  <p className="text-xs font-mono text-ink-muted line-clamp-2">
-                    {p.tagline}
-                  </p>
-                </div>
 
-                <div className="flex items-center justify-between border-t border-ink/10 pt-2 text-xs font-mono">
-                  <span className="text-ink-muted">
-                    {p.hoursPerWeek}H / WK
-                  </span>
-                  <Link href={`/projects/${p.id}`}>
-                    <Button variant="outline" size="sm" className="h-7 text-xs">
-                      VIEW
-                    </Button>
-                  </Link>
+                  <div className="flex items-center justify-between border-t border-ink/10 pt-2 text-xs font-mono">
+                    <span className="text-ink-muted">
+                      {p.hoursPerWeek}H / WK
+                    </span>
+                    <Link href={`/projects/${p.id}`}>
+                      <Button variant="outline" size="sm" className="h-7 text-xs">
+                        VIEW
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 border-hard bg-white shadow-hard text-center space-y-3">
+              <p className="font-mono font-bold text-xs uppercase text-ink">
+                NO MATCHING PROJECTS FOUND
+              </p>
+              <p className="text-xs font-mono text-ink-muted">
+                Try searching for different skills or select a domain category above.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setQuery("");
+                  setSearchIntent(null);
+                }}
+                className="text-xs"
+              >
+                CLEAR SEARCH
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
       {/* Students Results */}
       {tab === "students" && (
         <div className="space-y-3 pt-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {dbStudents.map((s) => (
-              <div
-                key={s.id}
-                className="bg-white border-hard shadow-hard p-4 flex flex-col justify-between space-y-3 hover:bg-canvas-subtle transition-all"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <Avatar name={s.fullName} src={s.avatarUrl} size="md" />
-                    <div className="space-y-0.5 min-w-0">
-                      <h3 className="font-mono font-black text-sm uppercase text-ink truncate">
-                        {s.fullName}
-                      </h3>
-                      <p className="text-xs font-mono text-ink-muted truncate">
-                        {s.major} • {s.college}
-                      </p>
+          {dbStudents.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {dbStudents.map((s) => (
+                <div
+                  key={s.id}
+                  className="bg-white border-hard shadow-hard p-4 flex flex-col justify-between space-y-3 hover:bg-canvas-subtle transition-all"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={s.fullName} src={s.avatarUrl} size="md" />
+                      <div className="space-y-0.5 min-w-0">
+                        <h3 className="font-mono font-black text-sm uppercase text-ink truncate">
+                          {s.fullName}
+                        </h3>
+                        <p className="text-xs font-mono text-ink-muted truncate">
+                          {s.major} • {s.college}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {s.skills.slice(0, 3).map((sk) => (
+                        <span
+                          key={sk.id}
+                          className="text-[10px] font-mono px-1.5 py-0.5 bg-canvas-subtle border-hard-sm uppercase font-bold text-ink"
+                        >
+                          {sk.name} {sk.proficiency}/5
+                        </span>
+                      ))}
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {s.skills.slice(0, 3).map((sk) => (
-                      <span
-                        key={sk.id}
-                        className="text-[10px] font-mono px-1.5 py-0.5 bg-canvas-subtle border-hard-sm uppercase font-bold text-ink"
-                      >
-                        {sk.name} {sk.proficiency}/5
-                      </span>
-                    ))}
+                  <div className="flex items-center justify-between border-t border-ink/10 pt-2 text-xs font-mono">
+                    <span className="text-ink-muted uppercase text-[10px]">
+                      {s.availability?.hoursPerWeek || 10}H/WK • {s.workingStyle || "TEAM"}
+                    </span>
+                    <Link href={`/profile/${s.id}`}>
+                      <Button variant="outline" size="sm" className="h-7 text-xs">
+                        VIEW PROFILE
+                      </Button>
+                    </Link>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between border-t border-ink/10 pt-2 text-xs font-mono">
-                  <span className="text-ink-muted uppercase text-[10px]">
-                    {s.availability?.hoursPerWeek || 10}H/WK • {s.workingStyle || "TEAM"}
-                  </span>
-                  <Link href={`/profile/${s.id}`}>
-                    <Button variant="outline" size="sm" className="h-7 text-xs">
-                      VIEW PROFILE
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 border-hard bg-white shadow-hard text-center space-y-3">
+              <p className="font-mono font-bold text-xs uppercase text-ink">
+                NO MATCHING CANDIDATES FOUND
+              </p>
+              <p className="text-xs font-mono text-ink-muted">
+                Try searching for a different skill, name, or role.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setQuery("");
+                  setSearchIntent(null);
+                }}
+                className="text-xs"
+              >
+                CLEAR SEARCH
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -73,6 +73,11 @@ export interface StudentProfile {
   githubUrl?: string;
   portfolioUrl?: string;
   linkedinUrl?: string;
+  discordUrl?: string;
+  instagramUrl?: string;
+  resumeUrl?: string;
+  followersCount?: number;
+  followingCount?: number;
   skills: UserSkill[];
   interests: Interest[];
   availability: Availability;

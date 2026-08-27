@@ -369,4 +369,60 @@ export class TeamService {
 
     return { success: true };
   }
+
+  /**
+   * Deletes a team/squad with lead authorization check and safe cascading
+   */
+  static async deleteTeam(params: {
+    teamId: string;
+    requesterId: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    // 1. Local Cache Deletion
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(LOCAL_TEAMS_KEY);
+        if (stored) {
+          const list: TeamRecord[] = JSON.parse(stored);
+          const filtered = list.filter((t) => t.id !== params.teamId);
+          localStorage.setItem(LOCAL_TEAMS_KEY, JSON.stringify(filtered));
+        }
+      } catch (err) {
+        console.warn("Could not delete from local storage:", err);
+      }
+    }
+
+    // 2. Supabase DB Deletion
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+
+        // Check if requester is lead
+        const { data: member, error: authError } = await supabase
+          .from("team_members")
+          .select("is_lead")
+          .eq("team_id", params.teamId)
+          .eq("user_id", params.requesterId)
+          .maybeSingle();
+
+        if (authError || !member?.is_lead) {
+          return { success: false, error: "Only the squad lead can delete this squad." };
+        }
+
+        // Delete team (cascades to team_members)
+        const { error: delError } = await supabase
+          .from("teams")
+          .delete()
+          .eq("id", params.teamId);
+
+        if (delError) {
+          return { success: false, error: delError.message };
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, error: msg };
+      }
+    }
+
+    return { success: true };
+  }
 }

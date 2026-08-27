@@ -1,9 +1,11 @@
 import {
   IndividualMatchResult,
   MatchingWeights,
+  RecommendationSignal,
   StructuredMatchWhy,
   TeamCompositionCandidate,
   TeamCompositionResult,
+  TeamReadinessInfo,
   TeamSkillCoverage,
   TeamSynergyBreakdown,
 } from '@/types/matching';
@@ -624,6 +626,82 @@ export class MatchingEngine {
   }
 
   /**
+   * Derives smart recommendation signals for projects based on deterministic match.
+   */
+  public getRecommendationSignal(
+    matchScore: number,
+    missingSkillsCount = 0
+  ): RecommendationSignal {
+    if (matchScore >= 85) {
+      return {
+        label: "STRONG MATCH",
+        variant: "lime",
+        description: "Exceptional skill and schedule overlap with project requirements.",
+      };
+    }
+    if (matchScore >= 70) {
+      return {
+        label: "GOOD FIT",
+        variant: "yellow",
+        description: "Solid foundational alignment with great contribution potential.",
+      };
+    }
+    if (missingSkillsCount > 0) {
+      return {
+        label: "SKILL GAP",
+        variant: "coral",
+        description: "Project requires key technologies outside your current verified stack.",
+      };
+    }
+    return {
+      label: "NEW OPPORTUNITY",
+      variant: "outline",
+      description: "Explore this project to develop new domain skills and expand capabilities.",
+    };
+  }
+
+  /**
+   * Derives Team Readiness Status from deterministic Team Synergy calculation.
+   */
+  public getTeamReadiness(synergy: TeamCompositionResult): TeamReadinessInfo {
+    const missingRolesCount = synergy.gaps?.missingRoles?.length || 0;
+    const missingSkillsCount = synergy.gaps?.missingSkills?.length || 0;
+    const criticalGaps: string[] = [
+      ...(synergy.gaps?.missingRoles || []).map((r) => `Missing role: ${r}`),
+      ...(synergy.gaps?.missingSkills || []).map((s) => `Missing skill: ${s}`),
+    ];
+
+    if (synergy.teamScore >= 80 && missingRolesCount === 0 && missingSkillsCount === 0) {
+      return {
+        tier: "READY",
+        statusLabel: "SQUAD READY ✓",
+        variant: "lime",
+        summary: "All core capability tracks covered. Ready for kickoff.",
+        criticalGaps: [],
+      };
+    }
+
+    if (synergy.teamScore >= 65 && (missingRolesCount <= 1 || missingSkillsCount <= 2)) {
+      return {
+        tier: "PARTIALLY READY",
+        statusLabel: "PARTIALLY READY △",
+        variant: "yellow",
+        summary: `Good foundational synergy (${synergy.teamScore}%), but still has minor capability gaps.`,
+        criticalGaps,
+      };
+    }
+
+    const gapCount = missingRolesCount + missingSkillsCount;
+    return {
+      tier: "GAPS TO FILL",
+      statusLabel: gapCount > 0 ? `${gapCount} GAPS TO FILL ⚠` : "GAPS TO FILL ⚠",
+      variant: "coral",
+      summary: `Critical capability gaps detected. Squad synergy is at ${synergy.teamScore}%.`,
+      criticalGaps,
+    };
+  }
+
+  /**
    * Compatibility wrapper for existing callers.
    */
   public evaluateTeamComposition(
@@ -635,3 +713,4 @@ export class MatchingEngine {
 }
 
 export const defaultMatchingEngine = new MatchingEngine();
+

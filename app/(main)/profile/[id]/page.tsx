@@ -8,6 +8,7 @@ import { StudentProfile } from "@/types/user";
 import { ProfileService } from "@/services/profile-service";
 import { TeamService, TeamRecord } from "@/services/team-service";
 import { InvitationService } from "@/services/invitation-service";
+import { SocialService } from "@/services/social-service";
 import { MOCK_PROJECTS } from "@/lib/mock-data";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -23,19 +24,26 @@ import {
   Briefcase,
   Sparkles,
   UserPlus,
+  UserCheck,
   CheckCircle2,
   AlertCircle,
   Loader2,
+  MessageSquare,
+  FileText,
+  Instagram,
+  Users,
 } from "lucide-react";
 
 export default function StudentProfileDetailPage() {
   const params = useParams();
   const userId = params.id as string;
-  const { profile: activeUser } = useAuth();
+  const { profile: activeUser, isDemoMode } = useAuth();
 
   const [student, setStudent] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [userTeams, setUserTeams] = useState<TeamRecord[]>([]);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followCounts, setFollowCounts] = useState({ followersCount: 24, followingCount: 16 });
 
   // Invite Modal State
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -50,6 +58,17 @@ export default function StudentProfileDetailPage() {
       try {
         const data = await ProfileService.getProfileById(userId);
         setStudent(data);
+
+        if (activeUser?.id) {
+          const following = SocialService.isFollowing(activeUser.id, userId);
+          setIsFollowing(following);
+        }
+
+        const counts = await SocialService.getFollowCounts(userId);
+        setFollowCounts({
+          followersCount: data?.followersCount || counts.followersCount,
+          followingCount: data?.followingCount || counts.followingCount,
+        });
       } catch (err) {
         console.error("Failed to load profile:", err);
       } finally {
@@ -57,7 +76,7 @@ export default function StudentProfileDetailPage() {
       }
     };
     fetchStudent();
-  }, [userId]);
+  }, [userId, activeUser?.id]);
 
   useEffect(() => {
     const loadTeams = async () => {
@@ -136,6 +155,27 @@ export default function StudentProfileDetailPage() {
     );
   }
 
+  const handleToggleFollow = async () => {
+    if (!activeUser) {
+      window.location.href = "/login";
+      return;
+    }
+    if (isOwnProfile) return;
+
+    const previous = isFollowing;
+    setIsFollowing(!previous);
+    setFollowCounts((prev) => ({
+      ...prev,
+      followersCount: previous ? Math.max(0, prev.followersCount - 1) : prev.followersCount + 1,
+    }));
+
+    if (previous) {
+      await SocialService.unfollowUser(activeUser.id, student.id, isDemoMode);
+    } else {
+      await SocialService.followUser(activeUser.id, student.id, isDemoMode);
+    }
+  };
+
   const isMockStudent = student.id.startsWith("usr_");
   const studentProjects = MOCK_PROJECTS.filter((p) => p.ownerId === student.id);
   const isOwnProfile = activeUser?.id === student.id;
@@ -160,18 +200,50 @@ export default function StudentProfileDetailPage() {
           )}
 
           {!isOwnProfile && (
-            <Button
-              variant="accent"
-              size="sm"
-              onClick={() => {
-                setIsInviteModalOpen(true);
-                setInviteFeedback(null);
-              }}
-              className="flex items-center gap-1 text-xs"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>INVITE TO SQUAD</span>
-            </Button>
+            <>
+              <Button
+                variant={isFollowing ? "outline" : "primary"}
+                size="sm"
+                onClick={handleToggleFollow}
+                className="flex items-center gap-1 text-xs"
+              >
+                {isFollowing ? (
+                  <>
+                    <UserCheck className="w-3.5 h-3.5 text-caca-blue" />
+                    <span>FOLLOWING</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>CONNECT / FOLLOW</span>
+                  </>
+                )}
+              </Button>
+
+              <Link href={`/chat?recipient=${student.id}`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-1 text-xs"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>MESSAGE</span>
+                </Button>
+              </Link>
+
+              <Button
+                variant="accent"
+                size="sm"
+                onClick={() => {
+                  setIsInviteModalOpen(true);
+                  setInviteFeedback(null);
+                }}
+                className="flex items-center gap-1 text-xs"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>INVITE</span>
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -199,7 +271,7 @@ export default function StudentProfileDetailPage() {
               {student.major} • {student.college}
             </p>
             <p className="text-[11px] font-mono text-ink-muted uppercase">
-              {student.experienceLevel} • GRAD {student.gradYear}
+              {student.experienceLevel} • GRAD {student.gradYear} • {followCounts.followersCount} FOLLOWERS • {followCounts.followingCount} FOLLOWING
             </p>
 
             {student.openTo && student.openTo.length > 0 && (
@@ -227,44 +299,69 @@ export default function StudentProfileDetailPage() {
           </div>
         )}
 
-        {/* Links */}
-        {(student.linkedinUrl || student.githubUrl || student.portfolioUrl) && (
-          <div className="flex flex-wrap gap-2 pt-1 border-t border-ink/10">
-            {student.linkedinUrl && (
-              <a
-                href={student.linkedinUrl.startsWith("http") ? student.linkedinUrl : `https://${student.linkedinUrl}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
-              >
-                <Linkedin className="w-3.5 h-3.5 text-[#0A66C2]" />
-                <span>LINKEDIN</span>
-              </a>
-            )}
-            {student.githubUrl && (
-              <a
-                href={student.githubUrl.startsWith("http") ? student.githubUrl : `https://${student.githubUrl}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
-              >
-                <Github className="w-3.5 h-3.5" />
-                <span>GITHUB</span>
-              </a>
-            )}
-            {student.portfolioUrl && (
-              <a
-                href={student.portfolioUrl.startsWith("http") ? student.portfolioUrl : `https://${student.portfolioUrl}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>PORTFOLIO</span>
-              </a>
-            )}
-          </div>
-        )}
+        {/* Links & Resume */}
+        <div className="flex flex-wrap gap-2 pt-1 border-t border-ink/10">
+          {student.resumeUrl && (
+            <a
+              href={student.resumeUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-caca-lime/20 hover:bg-caca-lime text-xs font-mono font-bold text-ink"
+            >
+              <FileText className="w-3.5 h-3.5 text-ink" />
+              <span>VIEW RESUME (PDF)</span>
+            </a>
+          )}
+          {student.linkedinUrl && (
+            <a
+              href={student.linkedinUrl.startsWith("http") ? student.linkedinUrl : `https://${student.linkedinUrl}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
+            >
+              <Linkedin className="w-3.5 h-3.5 text-[#0A66C2]" />
+              <span>LINKEDIN</span>
+            </a>
+          )}
+          {student.githubUrl && (
+            <a
+              href={student.githubUrl.startsWith("http") ? student.githubUrl : `https://${student.githubUrl}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
+            >
+              <Github className="w-3.5 h-3.5" />
+              <span>GITHUB</span>
+            </a>
+          )}
+          {student.portfolioUrl && (
+            <a
+              href={student.portfolioUrl.startsWith("http") ? student.portfolioUrl : `https://${student.portfolioUrl}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>PORTFOLIO</span>
+            </a>
+          )}
+          {student.discordUrl && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle text-xs font-mono font-bold text-ink">
+              <span>DISCORD: {student.discordUrl}</span>
+            </span>
+          )}
+          {student.instagramUrl && (
+            <a
+              href={student.instagramUrl.startsWith("http") ? student.instagramUrl : `https://instagram.com/${student.instagramUrl}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 border-hard bg-canvas-subtle hover:bg-white text-xs font-mono font-bold text-ink"
+            >
+              <Instagram className="w-3.5 h-3.5 text-pink-600" />
+              <span>INSTAGRAM</span>
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Availability & Working Style */}

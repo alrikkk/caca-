@@ -32,6 +32,7 @@ import {
   X,
   Zap,
   Edit2,
+  Trash2,
   UserMinus,
   Briefcase,
   FileText,
@@ -228,6 +229,26 @@ export default function TeamsPage() {
     await loadData();
   };
 
+  const handleDeleteTeam = async (team: TeamRecord) => {
+    if (!userId || !team.isLead) return;
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete squad "${team.name}"? This will dissolve the squad.`
+    );
+    if (!confirmDelete) return;
+
+    const res = await TeamService.deleteTeam({
+      teamId: team.id,
+      requesterId: userId,
+    });
+
+    if (res.success) {
+      setTeams((prev) => prev.filter((t) => t.id !== team.id));
+      await loadData();
+    } else {
+      alert(res.error || "Failed to delete team.");
+    }
+  };
+
   // Debounced search for invite members
   useEffect(() => {
     if (!inviteSearchQuery.trim()) {
@@ -388,6 +409,8 @@ export default function TeamsPage() {
                 matchedProj
               );
 
+              const readiness = defaultMatchingEngine.getTeamReadiness(synergyResult);
+
               return (
                 <div
                   key={team.id}
@@ -395,9 +418,14 @@ export default function TeamsPage() {
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b-2 border-ink pb-3 gap-2">
                     <div className="space-y-0.5">
-                      <span className="text-[10px] font-mono font-bold bg-canvas-subtle px-1.5 py-0.5 border-hard-sm uppercase text-ink">
-                        {team.name}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold bg-canvas-subtle px-1.5 py-0.5 border-hard-sm uppercase text-ink">
+                          {team.name}
+                        </span>
+                        <Badge variant={readiness.variant as any} size="sm" className="text-[10px] font-black">
+                          {readiness.statusLabel}
+                        </Badge>
+                      </div>
                       <h2 className="font-mono font-black text-base uppercase text-ink pt-1">
                         {team.projectName}
                       </h2>
@@ -405,9 +433,33 @@ export default function TeamsPage() {
                         YOUR ROLE: <span className="font-bold text-ink">{team.role}</span> {team.isLead && "(LEAD)"}
                       </p>
                     </div>
-                    <Badge variant="lime" size="sm" className="text-xs">
-                      SYNERGY {synergyResult.teamScore}%
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="lime" size="sm" className="text-xs">
+                        SYNERGY {synergyResult.teamScore}%
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Team Readiness Summary Banner */}
+                  <div className="p-3 bg-canvas-subtle border-hard flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 font-mono text-xs">
+                    <div>
+                      <span className="text-[10px] text-ink-muted uppercase font-bold">TEAM READINESS STATUS</span>
+                      <p className="font-bold text-ink">{readiness.summary}</p>
+                    </div>
+                    {team.isLead && (matchedProj.missingRoles?.length || 0) > 0 && (
+                      <Button
+                        variant="accent"
+                        size="sm"
+                        onClick={() => {
+                          setMatcherRole(matchedProj.missingRoles?.[0] || "Squad Member");
+                          setMatcherProject(matchedProj);
+                          setIsMatcherOpen(true);
+                        }}
+                        className="text-xs h-7 shrink-0"
+                      >
+                        <span>FIND {matchedProj.missingRoles?.[0]} →</span>
+                      </Button>
+                    )}
                   </div>
 
                   {/* Team Synergy 5-Way Breakdown */}
@@ -603,6 +655,19 @@ export default function TeamsPage() {
                         <UserPlus className="w-3 h-3" />
                         <span>INVITE MEMBER</span>
                       </Button>
+
+                      {team.isLead && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteTeam(team)}
+                          className="h-7 text-xs flex items-center gap-1 text-red-600 hover:bg-red-50 border-hard"
+                          title="Delete Squad"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-600" />
+                          <span>DELETE SQUAD</span>
+                        </Button>
+                      )}
 
                       <Link href={`/projects/${team.projectId}`}>
                         <Button variant="primary" size="sm" className="h-7 text-xs">

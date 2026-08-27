@@ -102,3 +102,19 @@ export interface TeamCompositionResult {
   teamInsightSummary?: string;
   aiExplanation?: string;
 }
+
+export interface RecommendationSignal {
+  label: "STRONG MATCH" | "GOOD FIT" | "SKILL GAP" | "NEW OPPORTUNITY";
+  variant: "lime" | "yellow" | "coral" | "outline" | "default";
+  description: string;
+}
+
+export interface TeamReadinessInfo {
+  tier: "READY" | "PARTIALLY READY" | "GAPS TO FILL";
+  statusLabel: string;
+  variant: "lime" | "yellow" | "coral";
+  summary: string;
+  criticalGaps: string[];
+}
+
+

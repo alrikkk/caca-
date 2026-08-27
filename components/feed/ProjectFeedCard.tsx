@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Project } from "@/types/project";
 import { useAuth } from "@/lib/auth-context";
 import { ApplicationService } from "@/services/application-service";
+import { BookmarkService } from "@/services/bookmark-service";
+import { defaultMatchingEngine } from "@/matching/engine";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -43,14 +45,30 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const checkApp = async () => {
+    const checkState = async () => {
       if (profile?.id) {
         const applied = await ApplicationService.hasApplied(project.id, profile.id);
         setIsApplied(applied);
+
+        const saved = BookmarkService.isBookmarked(profile.id, project.id);
+        setIsSaved(saved);
       }
     };
-    checkApp();
+    checkState();
   }, [project.id, profile?.id]);
+
+  const handleToggleSave = async () => {
+    if (!profile?.id) {
+      window.location.href = "/login";
+      return;
+    }
+    const previous = isSaved;
+    setIsSaved(!previous);
+    const res = await BookmarkService.toggleBookmark(profile.id, project.id);
+    if (!res.success) {
+      setIsSaved(previous);
+    }
+  };
 
   const handleApply = async () => {
     if (!profile) {
@@ -73,6 +91,10 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
 
   const matchScore = project.matchScore ?? 80;
   const ownerId = project.owner?.id || project.ownerId;
+  const recSignal = defaultMatchingEngine.getRecommendationSignal(
+    matchScore,
+    project.missingRoles?.length || 0
+  );
 
   return (
     <>
@@ -98,8 +120,11 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
             </span>
           </Link>
 
-          <div className="flex items-center gap-2">
-            <Badge variant="dark" size="sm">
+          <div className="flex items-center gap-1.5">
+            <Badge variant={recSignal.variant as any} size="sm" title={recSignal.description}>
+              {recSignal.label}
+            </Badge>
+            <Badge variant="dark" size="sm" className="hidden xs:inline-flex">
               {project.category}
             </Badge>
             <button
@@ -237,14 +262,15 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
             </Button>
 
             <button
-              onClick={() => setIsSaved(!isSaved)}
+              onClick={handleToggleSave}
               className={cn(
                 "p-1.5 border-hard bg-white btn-tactile",
                 isSaved && "bg-caca-yellow"
               )}
               aria-label="Save project"
+              title={isSaved ? "Remove from saved" : "Save project"}
             >
-              <Bookmark className="w-3.5 h-3.5" />
+              <Bookmark className={cn("w-3.5 h-3.5", isSaved && "fill-ink text-ink")} />
             </button>
           </div>
 

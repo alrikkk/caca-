@@ -47,6 +47,9 @@ export const Modal: React.FC<ModalProps> = ({
 
       {/* Modal Dialog */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? "modal-title" : undefined}
         className={cn(
           "relative z-10 w-full max-w-xl bg-white border-hard shadow-hard-xl p-6 overflow-hidden max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-100",
           className
@@ -55,7 +58,7 @@ export const Modal: React.FC<ModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b-2 border-ink pb-4 mb-4">
           {title ? (
-            <h3 className="text-base font-mono font-black uppercase tracking-wider text-ink">
+            <h3 id="modal-title" className="text-base font-mono font-black uppercase tracking-wider text-ink">
               {title}
             </h3>
           ) : (

@@ -2,17 +2,21 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ProjectFeedCard } from "@/components/feed/ProjectFeedCard";
+import { NextStepBanner } from "@/components/feed/NextStepBanner";
 import { ProjectService } from "@/services/project-service";
+import { BookmarkService } from "@/services/bookmark-service";
 import { Project } from "@/types/project";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-type FilterType = "FOR_YOU" | "ALL" | "HIGH_MATCH" | "URGENT" | "AI" | "SYSTEMS";
+type FilterType = "FOR_YOU" | "ALL" | "SAVED" | "HIGH_MATCH" | "URGENT" | "AI" | "SYSTEMS";
 
 export default function FeedPage() {
   const { profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [savedProjectIds, setSavedProjectIds] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterType>("FOR_YOU");
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -20,6 +24,11 @@ export default function FeedPage() {
     const loadProjects = async () => {
       const list = await ProjectService.getFeedProjects(profile);
       setProjects(list);
+
+      if (profile?.id) {
+        const saved = await BookmarkService.getBookmarkedProjectIds(profile.id);
+        setSavedProjectIds(saved);
+      }
     };
     loadProjects();
   }, [profile]);
@@ -30,6 +39,10 @@ export default function FeedPage() {
     if (activeFilter === "FOR_YOU") {
       result.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
       return result;
+    }
+
+    if (activeFilter === "SAVED") {
+      return result.filter((proj) => savedProjectIds.includes(proj.id));
     }
 
     if (activeFilter === "HIGH_MATCH") {
@@ -55,7 +68,7 @@ export default function FeedPage() {
     }
 
     return result;
-  }, [projects, activeFilter]);
+  }, [projects, activeFilter, savedProjectIds]);
 
   // Keyboard navigation for vertical discovery (J/K or Down/Up)
   useEffect(() => {
@@ -77,6 +90,9 @@ export default function FeedPage() {
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
+      {/* Personalized Next Step Guidance */}
+      <NextStepBanner />
+
       {/* Header & Filter Bar */}
       <div className="space-y-4">
         <div className="flex items-center justify-between border-b-2 border-ink pb-3">
@@ -102,6 +118,7 @@ export default function FeedPage() {
             [
               { id: "FOR_YOU", label: "RECOMMENDED FOR YOU" },
               { id: "ALL", label: "ALL PROJECTS" },
+              { id: "SAVED", label: `SAVED (${savedProjectIds.length})` },
               { id: "HIGH_MATCH", label: "HIGH MATCH >85%" },
               { id: "URGENT", label: "MISSING ROLES" },
               { id: "AI", label: "AI & VISION" },
@@ -138,10 +155,24 @@ export default function FeedPage() {
             />
           ))
         ) : (
-          <div className="p-10 text-center border-hard bg-white shadow-hard">
+          <div className="p-10 text-center border-hard bg-white shadow-hard space-y-3">
             <p className="font-mono font-bold text-xs uppercase text-ink">
-              NO MATCHING PROJECTS
+              NO MATCHING PROJECTS FOR THIS FILTER
             </p>
+            <p className="text-xs font-mono text-ink-muted">
+              Try switching filters or explore the full catalogue of open squads.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setActiveFilter("ALL");
+                setSelectedIndex(0);
+              }}
+              className="text-xs"
+            >
+              VIEW ALL PROJECTS
+            </Button>
           </div>
         )}
       </div>
