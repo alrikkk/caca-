@@ -100,7 +100,7 @@ export default function UnifiedAuthPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-canvas flex flex-col justify-center items-center p-4 overflow-hidden">
+    <div className="relative min-h-screen bg-canvas bg-grid-subtle flex flex-col justify-center items-center p-4 overflow-hidden">
       <Login3DBackground />
       <div className="w-full max-w-sm bg-white border-hard shadow-hard-xl p-6 sm:p-8 space-y-5 relative z-10">
         {/* Brand Header */}

@@ -114,6 +114,33 @@ body {
   }
 }
 
+/* Smooth floating animations for technical annotations */
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes floatDelayed {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(6px);
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 7s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: floatDelayed 8.5s ease-in-out infinite;
+}
+
 /* Reduce motion accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,

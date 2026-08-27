@@ -1,16 +1,29 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
 
-interface Node3D {
+// 3D Point Interface
+interface Point3D {
   x: number;
   y: number;
   z: number;
-  baseX: number;
-  baseY: number;
-  baseZ: number;
-  isSpecial: boolean;
-  phase: number;
+}
+
+// 3D Object Definition
+interface Object3D {
+  type: "cube" | "molecule" | "tetrahedron" | "surface" | "graph";
+  center: Point3D;
+  vertices: Point3D[];
+  edges: [number, number][];
+  specialEdges?: [number, number][];
+  specialVertices?: number[];
+  rotX: number;
+  rotY: number;
+  rotZ: number;
+  rotSpeedX: number;
+  rotSpeedY: number;
+  rotSpeedZ: number;
 }
 
 export const Login3DBackground: React.FC = () => {
@@ -27,12 +40,11 @@ export const Login3DBackground: React.FC = () => {
     let width = 0;
     let height = 0;
 
-    // Check for reduced motion preference
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const updateSize = () => {
+    const handleResize = () => {
       if (!canvas) return;
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
       width = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth;
@@ -40,188 +52,306 @@ export const Login3DBackground: React.FC = () => {
 
       canvas.width = width * dpr;
       canvas.height = height * dpr;
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
     };
 
-    updateSize();
+    handleResize();
+    window.addEventListener("resize", handleResize);
 
-    window.addEventListener("resize", updateSize);
+    // ----------------------------------------------------
+    // Create 3D Objects in Peripheral Space
+    // ----------------------------------------------------
+    const createCube = (cx: number, cy: number, size: number): Object3D => {
+      const s = size / 2;
+      const v: Point3D[] = [
+        { x: -s, y: -s, z: -s },
+        { x: s, y: -s, z: -s },
+        { x: s, y: s, z: -s },
+        { x: -s, y: s, z: -s },
+        { x: -s, y: -s, z: s },
+        { x: s, y: -s, z: s },
+        { x: s, y: s, z: s },
+        { x: -s, y: s, z: s },
+      ];
+      const e: [number, number][] = [
+        [0, 1], [1, 2], [2, 3], [3, 0],
+        [4, 5], [5, 6], [6, 7], [7, 4],
+        [0, 4], [1, 5], [2, 6], [3, 7],
+      ];
+      return {
+        type: "cube",
+        center: { x: cx, y: cy, z: 0 },
+        vertices: v,
+        edges: e,
+        specialEdges: [[4, 5], [5, 6], [6, 7], [7, 4]],
+        specialVertices: [4, 5, 6, 7],
+        rotX: 0.4,
+        rotY: 0.6,
+        rotZ: 0.2,
+        rotSpeedX: 0.003,
+        rotSpeedY: 0.005,
+        rotSpeedZ: 0.002,
+      };
+    };
 
-    // Generate 3D Neo-Brutalist Student Network Constellation
-    const nodes: Node3D[] = [];
-    const gridSize = 3;
-    const spacing = 95;
+    const createTetrahedron = (cx: number, cy: number, size: number): Object3D => {
+      const s = size;
+      const v: Point3D[] = [
+        { x: 0, y: -s * 0.8, z: 0 },
+        { x: -s * 0.7, y: s * 0.5, z: -s * 0.5 },
+        { x: s * 0.7, y: s * 0.5, z: -s * 0.5 },
+        { x: 0, y: s * 0.5, z: s * 0.7 },
+      ];
+      const e: [number, number][] = [
+        [0, 1], [0, 2], [0, 3],
+        [1, 2], [2, 3], [3, 1],
+      ];
+      return {
+        type: "tetrahedron",
+        center: { x: cx, y: cy, z: 0 },
+        vertices: v,
+        edges: e,
+        specialVertices: [0],
+        rotX: 0.2,
+        rotY: 0.3,
+        rotZ: 0.1,
+        rotSpeedX: 0.004,
+        rotSpeedY: 0.003,
+        rotSpeedZ: 0.001,
+      };
+    };
 
-    for (let x = -gridSize; x <= gridSize; x++) {
-      for (let y = -gridSize; y <= gridSize; y++) {
-        for (let z = -1; z <= 1; z++) {
-          // Jitter positions slightly for organic technical graph feel
-          const jitterX = (Math.sin(x * 3 + y * 7) * 20);
-          const jitterY = (Math.cos(y * 5 + z * 3) * 20);
-          const jitterZ = (Math.sin(z * 4 + x * 2) * 25);
+    const createMolecule = (cx: number, cy: number, radius: number): Object3D => {
+      const v: Point3D[] = [];
+      const e: [number, number][] = [];
+      const ringCount = 6;
 
-          const posX = x * spacing + jitterX;
-          const posY = y * spacing + jitterY;
-          const posZ = z * spacing + jitterZ;
+      // Hexagonal Benzene Ring
+      for (let i = 0; i < ringCount; i++) {
+        const theta = (i * 2 * Math.PI) / ringCount;
+        v.push({
+          x: Math.cos(theta) * radius,
+          y: Math.sin(theta) * radius,
+          z: (i % 2 === 0 ? 1 : -1) * 8,
+        });
+      }
+      for (let i = 0; i < ringCount; i++) {
+        e.push([i, (i + 1) % ringCount]);
+      }
 
-          nodes.push({
-            x: posX,
-            y: posY,
-            z: posZ,
-            baseX: posX,
-            baseY: posY,
-            baseZ: posZ,
-            isSpecial: (x + y + z) % 5 === 0,
-            phase: Math.random() * Math.PI * 2,
-          });
+      // Outer functional group branches
+      const branchRadius = radius * 1.55;
+      for (let i = 0; i < 3; i++) {
+        const idx = i * 2;
+        const theta = (idx * 2 * Math.PI) / ringCount;
+        v.push({
+          x: Math.cos(theta) * branchRadius,
+          y: Math.sin(theta) * branchRadius,
+          z: (i % 2 === 0 ? 12 : -12),
+        });
+        e.push([idx, ringCount + i]);
+      }
+
+      return {
+        type: "molecule",
+        center: { x: cx, y: cy, z: 0 },
+        vertices: v,
+        edges: e,
+        specialVertices: [0, 2, 4, ringCount],
+        rotX: 0.5,
+        rotY: 0.2,
+        rotZ: 0.4,
+        rotSpeedX: 0.002,
+        rotSpeedY: 0.004,
+        rotSpeedZ: 0.001,
+      };
+    };
+
+    const createParametricSurface = (cx: number, cy: number, size: number): Object3D => {
+      const v: Point3D[] = [];
+      const e: [number, number][] = [];
+      const steps = 5;
+      const stepSize = size / steps;
+
+      for (let i = 0; i <= steps; i++) {
+        for (let j = 0; j <= steps; j++) {
+          const x = (i - steps / 2) * stepSize;
+          const y = (j - steps / 2) * stepSize;
+          const z = Math.sin(i * 0.8) * Math.cos(j * 0.8) * 16;
+          v.push({ x, y, z });
         }
       }
-    }
 
-    let angleY = 0.35;
-    let angleX = 0.25;
+      const stride = steps + 1;
+      for (let i = 0; i <= steps; i++) {
+        for (let j = 0; j <= steps; j++) {
+          const curr = i * stride + j;
+          if (j < steps) e.push([curr, curr + 1]);
+          if (i < steps) e.push([curr, curr + stride]);
+        }
+      }
+
+      return {
+        type: "surface",
+        center: { x: cx, y: cy, z: 0 },
+        vertices: v,
+        edges: e,
+        rotX: 1.1,
+        rotY: 0.4,
+        rotZ: 0.3,
+        rotSpeedX: 0.001,
+        rotSpeedY: 0.002,
+        rotSpeedZ: 0.001,
+      };
+    };
+
+    // Instantiate surrounding 3D elements
+    const getObjects = (w: number, h: number): Object3D[] => {
+      const isMobile = w < 768;
+      const isTablet = w >= 768 && w < 1024;
+
+      if (isMobile) {
+        return [
+          createMolecule(w * 0.18, h * 0.16, 26),
+          createCube(w * 0.82, h * 0.18, 38),
+        ];
+      }
+
+      if (isTablet) {
+        return [
+          createMolecule(w * 0.16, h * 0.18, 36),
+          createCube(w * 0.84, h * 0.18, 48),
+          createTetrahedron(w * 0.14, h * 0.82, 45),
+          createParametricSurface(w * 0.84, h * 0.82, 60),
+        ];
+      }
+
+      // Desktop full composition
+      return [
+        createMolecule(w * 0.15, h * 0.16, 42),
+        createCube(w * 0.86, h * 0.18, 54),
+        createTetrahedron(w * 0.12, h * 0.52, 48),
+        createParametricSurface(w * 0.88, h * 0.56, 75),
+        createMolecule(w * 0.16, h * 0.84, 38),
+        createCube(w * 0.84, h * 0.84, 46),
+      ];
+    };
+
+    let objects = getObjects(width, height);
+
+    let mouseX = 0;
+    let mouseY = 0;
     let targetMouseX = 0;
     let targetMouseY = 0;
-    let currentMouseX = 0;
-    let currentMouseY = 0;
-    let tick = 0;
 
     const handleMouseMove = (e: MouseEvent) => {
       const centerX = width / 2;
       const centerY = height / 2;
-      targetMouseX = ((e.clientX - centerX) / width) * 0.35;
-      targetMouseY = ((e.clientY - centerY) / height) * 0.35;
+      targetMouseX = ((e.clientX - centerX) / width) * 0.4;
+      targetMouseY = ((e.clientY - centerY) / height) * 0.4;
     };
 
     window.addEventListener("mousemove", handleMouseMove);
 
+    const fov = 450;
+
     const render = () => {
       ctx.clearRect(0, 0, width, height);
 
-      tick += 0.015;
-
       if (!prefersReducedMotion) {
-        angleY += 0.002;
-        angleX += 0.001;
-
-        // Smooth mouse damping
-        currentMouseX += (targetMouseX - currentMouseX) * 0.05;
-        currentMouseY += (targetMouseY - currentMouseY) * 0.05;
+        mouseX += (targetMouseX - mouseX) * 0.05;
+        mouseY += (targetMouseY - mouseY) * 0.05;
       }
 
-      const effAngleY = angleY + currentMouseX;
-      const effAngleX = angleX + currentMouseY;
+      // Render each peripheral 3D object
+      for (let oIdx = 0; oIdx < objects.length; oIdx++) {
+        const obj = objects[oIdx];
 
-      const cosY = Math.cos(effAngleY);
-      const sinY = Math.sin(effAngleY);
-      const cosX = Math.cos(effAngleX);
-      const sinX = Math.sin(effAngleX);
+        if (!prefersReducedMotion) {
+          obj.rotX += obj.rotSpeedX;
+          obj.rotY += obj.rotSpeedY;
+          obj.rotZ += obj.rotSpeedZ;
+        }
 
-      const fov = 500;
-      const projectedNodes: Array<{
-        px: number;
-        py: number;
-        scale: number;
-        z: number;
-        isSpecial: boolean;
-      }> = [];
+        const effRotX = obj.rotX + mouseY * 0.5;
+        const effRotY = obj.rotY + mouseX * 0.5;
 
-      // 3D Projection Calculation
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
+        const cosX = Math.cos(effRotX);
+        const sinX = Math.sin(effRotX);
+        const cosY = Math.cos(effRotY);
+        const sinY = Math.sin(effRotY);
+        const cosZ = Math.cos(obj.rotZ);
+        const sinZ = Math.sin(obj.rotZ);
 
-        // Float oscillation
-        const floatOffset = Math.sin(tick + node.phase) * 6;
-        const curY = node.baseY + floatOffset;
+        // Project vertices
+        const projected = obj.vertices.map((v) => {
+          // Rotate Z
+          const x1 = v.x * cosZ - v.y * sinZ;
+          const y1 = v.y * cosZ + v.x * sinZ;
+          const z1 = v.z;
 
-        // Rotate around Y-axis
-        const x1 = node.baseX * cosY - node.baseZ * sinY;
-        const z1 = node.baseZ * cosY + node.baseX * sinY;
+          // Rotate Y
+          const x2 = x1 * cosY - z1 * sinY;
+          const z2 = z1 * cosY + x1 * sinY;
 
-        // Rotate around X-axis
-        const y2 = curY * cosX - z1 * sinX;
-        const z2 = z1 * cosX + curY * sinX + 420; // Camera distance
+          // Rotate X
+          const y3 = y1 * cosX - z2 * sinX;
+          const z3 = z2 * cosX + y1 * sinX + 280; // Distance
 
-        const scale = fov / (fov + z2);
-        const px = x1 * scale + width / 2;
-        const py = y2 * scale + height / 2;
+          const scale = fov / (fov + z3);
+          const px = x2 * scale + obj.center.x;
+          const py = y3 * scale + obj.center.y;
 
-        projectedNodes.push({
-          px,
-          py,
-          scale,
-          z: z2,
-          isSpecial: node.isSpecial,
+          return { px, py, scale, z: z3 };
         });
-      }
 
-      // Draw 3D Connecting Grid Lines
-      const maxDistSq = 9500;
+        // Draw object edges
+        for (let eIdx = 0; eIdx < obj.edges.length; eIdx++) {
+          const [i1, i2] = obj.edges[eIdx];
+          const p1 = projected[i1];
+          const p2 = projected[i2];
 
-      for (let i = 0; i < projectedNodes.length; i++) {
-        const p1 = projectedNodes[i];
-        for (let j = i + 1; j < projectedNodes.length; j++) {
-          const p2 = projectedNodes[j];
-          const dx = p1.px - p2.px;
-          const dy = p1.py - p2.py;
-          const distSq = dx * dx + dy * dy;
+          const isSpecialEdge = obj.specialEdges?.some(
+            (se) => (se[0] === i1 && se[1] === i2) || (se[0] === i2 && se[1] === i1)
+          );
 
-          if (distSq < maxDistSq) {
-            const alpha = (1 - distSq / maxDistSq) * 0.18 * Math.min(p1.scale, p2.scale) * 1.5;
-            if (p1.isSpecial && p2.isSpecial) {
-              ctx.strokeStyle = `rgba(214, 248, 39, ${Math.min(0.6, alpha * 2.5)})`;
-              ctx.lineWidth = 1.5;
-            } else {
-              ctx.strokeStyle = `rgba(13, 13, 13, ${Math.min(0.25, alpha)})`;
-              ctx.lineWidth = 1;
-            }
-
-            ctx.beginPath();
-            ctx.moveTo(p1.px, p1.py);
-            ctx.lineTo(p2.px, p2.py);
-            ctx.stroke();
+          if (isSpecialEdge) {
+            ctx.strokeStyle = "rgba(214, 248, 39, 0.9)";
+            ctx.lineWidth = 2;
+          } else {
+            ctx.strokeStyle = "rgba(13, 13, 13, 0.35)";
+            ctx.lineWidth = 1.2;
           }
-        }
-      }
 
-      // Draw 3D Nodes (Points & Special Squad Anchors)
-      for (let i = 0; i < projectedNodes.length; i++) {
-        const p = projectedNodes[i];
-        const radius = Math.max(1.5, (p.isSpecial ? 4.5 : 2.5) * p.scale);
-
-        if (p.isSpecial) {
-          // Special Caca Lime Squad Node with ink border
-          ctx.fillStyle = "#D6F827";
-          ctx.strokeStyle = "#0D0D0D";
-          ctx.lineWidth = 1.5;
           ctx.beginPath();
-          ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.moveTo(p1.px, p1.py);
+          ctx.lineTo(p2.px, p2.py);
           ctx.stroke();
-        } else {
-          // Standard student network node
-          ctx.fillStyle = "rgba(13, 13, 13, 0.4)";
-          ctx.beginPath();
-          ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
-          ctx.fill();
         }
-      }
 
-      // Draw Subtle Neo-Brutalist Corner Crosshairs on 3D Bounding Area
-      const cornerSize = 5;
-      ctx.strokeStyle = "rgba(13, 13, 13, 0.2)";
-      ctx.lineWidth = 1;
+        // Draw object nodes / atoms
+        for (let vIdx = 0; vIdx < projected.length; vIdx++) {
+          const p = projected[vIdx];
+          const isSpecial = obj.specialVertices?.includes(vIdx);
+          const radius = Math.max(2, (isSpecial ? 5.5 : 3.2) * p.scale);
 
-      for (let i = 0; i < projectedNodes.length; i += 12) {
-        const p = projectedNodes[i];
-        if (p.scale > 0.8) {
-          ctx.beginPath();
-          ctx.moveTo(p.px - cornerSize, p.py);
-          ctx.lineTo(p.px + cornerSize, p.py);
-          ctx.moveTo(p.px, p.py - cornerSize);
-          ctx.lineTo(p.px, p.py + cornerSize);
-          ctx.stroke();
+          if (isSpecial) {
+            // Neon Lime Student Atom/Vertex with hard black border
+            ctx.fillStyle = "#D6F827";
+            ctx.strokeStyle = "#0D0D0D";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            // Ink Node
+            ctx.fillStyle = "#0D0D0D";
+            ctx.beginPath();
+            ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
 
@@ -233,7 +363,7 @@ export const Login3DBackground: React.FC = () => {
     render();
 
     return () => {
-      window.removeEventListener("resize", updateSize);
+      window.removeEventListener("resize", handleResize);
       window.removeEventListener("mousemove", handleMouseMove);
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
@@ -242,10 +372,125 @@ export const Login3DBackground: React.FC = () => {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 w-full h-full pointer-events-none z-0"
+    <div
+      className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-hidden select-none font-mono"
       aria-hidden="true"
-    />
+    >
+      {/* 3D Perspective Canvas */}
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+
+      {/* ============================================================ */}
+      {/* Surrounding Floating Academic, Math & Student Project Badges */}
+      {/* ============================================================ */}
+
+      {/* TOP-LEFT: Formula & Idea Tag */}
+      <div className="absolute top-6 left-6 sm:top-10 sm:left-12 space-y-1.5 opacity-90 hidden sm:block animate-float-slow">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
+          <span className="text-caca-blue font-black">∫</span>
+          <span>E = mc²</span>
+          <span className="text-ink-muted">•</span>
+          <span className="font-serif italic lowercase text-xs">a² + b² = c²</span>
+        </div>
+        <p className="text-[10px] text-ink-muted uppercase font-bold pl-0.5">
+          [MATH] → VECTOR_SPACES // TENSOR_FIELDS
+        </p>
+      </div>
+
+      {/* TOP-RIGHT: Physics & Innovation Sprint */}
+      <div className="absolute top-6 right-6 sm:top-10 sm:right-12 text-right space-y-1.5 opacity-90 hidden sm:block animate-float-delayed">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
+          <span className="bg-caca-lime text-ink px-1 border-hard-sm text-[9px] font-black">
+            BUILD
+          </span>
+          <span>HACKATHON_V2 // SHIP_STAGE</span>
+        </div>
+        <p className="text-[10px] text-ink-muted uppercase font-bold pr-0.5">
+          ∇ × B = μ₀J + μ₀ε₀(∂E/∂t)
+        </p>
+      </div>
+
+      {/* LEFT (Beside Login Card): Matrix & Squad Synergy Graph */}
+      <div className="absolute left-6 lg:left-14 top-1/2 -translate-y-1/2 space-y-3 hidden lg:block animate-float-slow">
+        {/* Linear Algebra Matrix Card */}
+        <div className="p-3 bg-white border-hard shadow-hard-sm space-y-1 max-w-[200px]">
+          <div className="flex items-center justify-between text-[10px] font-bold text-ink-muted border-b border-ink/10 pb-1">
+            <span>TRANSFORM MATRIX</span>
+            <span className="text-caca-blue font-black">SO(2)</span>
+          </div>
+          <div className="font-mono text-[11px] font-bold text-ink py-0.5">
+            <div>[ cos θ &nbsp;-sin θ ]</div>
+            <div>[ sin θ &nbsp;&nbsp;cos θ ]</div>
+          </div>
+          <div className="text-[9px] text-ink-muted font-bold pt-0.5 border-t border-ink/10">
+            det(A) = 1.0 • λv = Av
+          </div>
+        </div>
+
+        {/* Synergy Node Pill */}
+        <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-canvas-subtle border-hard text-[10px] font-bold text-ink">
+          <span className="w-2 h-2 rounded-full bg-caca-lime border-hard-sm animate-pulse" />
+          <span>SQUAD_SYNERGY: 98.4%</span>
+        </div>
+      </div>
+
+      {/* RIGHT (Beside Login Card): Terminal / Code Snippet */}
+      <div className="absolute right-6 lg:right-14 top-1/2 -translate-y-1/2 space-y-3 hidden lg:block animate-float-delayed">
+        {/* Mini Software Snippet */}
+        <div className="p-3 bg-white border-hard shadow-hard-sm space-y-1.5 max-w-[220px]">
+          <div className="flex items-center justify-between text-[10px] font-bold text-ink-muted border-b border-ink/10 pb-1">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 bg-red-400 border-hard-sm rounded-full" />
+              <span className="w-2 h-2 bg-yellow-400 border-hard-sm rounded-full" />
+              <span className="w-2 h-2 bg-caca-lime border-hard-sm rounded-full" />
+            </span>
+            <span className="text-ink font-bold">match.ts</span>
+          </div>
+          <pre className="text-[10px] font-mono font-medium text-ink leading-snug">
+            <code>
+              <span className="text-caca-blue font-bold">const</span> squad ={" "}
+              <span className="text-purple-600 font-bold">await</span>{" "}
+              match(&#123;{"\n"}
+              &nbsp;&nbsp;stack: [<span className="text-green-600">&quot;AI&quot;</span>,{" "}
+              <span className="text-green-600">&quot;Next&quot;</span>],{"\n"}
+              &nbsp;&nbsp;status:{" "}
+              <span className="bg-caca-lime px-1 border-hard-sm font-bold text-[9px]">
+                &quot;READY&quot;
+              </span>
+              {"\n"}&#125;);
+            </code>
+          </pre>
+        </div>
+
+        {/* AI Activation Formula */}
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-canvas-subtle border-hard text-[10px] font-bold text-ink">
+          <span>σ(z) = 1 / (1 + e⁻ᶻ)</span>
+        </div>
+      </div>
+
+      {/* BOTTOM-LEFT: Calculus & Autonomous Systems */}
+      <div className="absolute bottom-6 left-6 sm:bottom-10 sm:left-12 space-y-1.5 opacity-90 hidden sm:block animate-float-delayed">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
+          <span className="text-caca-coral font-black">∇</span>
+          <span>∂L/∂W = Xᵀ(ŷ - y)</span>
+        </div>
+        <p className="text-[10px] text-ink-muted uppercase font-bold pl-0.5">
+          [RESEARCH] → AUTONOMOUS_ROVER // SPRINT_04
+        </p>
+      </div>
+
+      {/* BOTTOM-RIGHT: Verification & Production Ship */}
+      <div className="absolute bottom-6 right-6 sm:bottom-10 sm:right-12 text-right space-y-1.5 opacity-90 hidden sm:block animate-float-slow">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
+          <span className="text-caca-green font-black">✓</span>
+          <span>PROD_STAGE // ALL TESTS PASS</span>
+          <span className="bg-caca-lime px-1 border-hard-sm text-[9px] font-black">
+            100%
+          </span>
+        </div>
+        <p className="text-[10px] text-ink-muted uppercase font-bold pr-0.5">
+          ∮ E · dA = Q / ε₀
+        </p>
+      </div>
+    </div>
   );
 };
