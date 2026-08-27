@@ -46,6 +46,11 @@ export interface Project {
   // Computed / client matching attributes
   matchScore?: number; // 0-100 individual compatibility with current user
   matchHighlights?: string[];
+  whyMatchItems?: string[];
+  groundedSummary?: string;
+  strongestOverlap?: string;
+  roleGapInsight?: string;
+  scheduleOverlapInsight?: string;
   matchBreakdown?: {
     skillMatch: number;
     experienceMatch: number;

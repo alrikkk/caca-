@@ -274,6 +274,11 @@ export const SquadBuilderModal: React.FC<SquadBuilderModalProps> = ({
                         <p className="text-[10px] text-ink-muted">
                           {member.college} • {member.major} • {member.availabilityMatch}
                         </p>
+                        {member.rationale && (
+                          <p className="text-[10px] text-ink font-semibold">
+                            {member.rationale}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-1 pt-0.5">
                           {member.matchedSkills.map((sk) => (
                             <span

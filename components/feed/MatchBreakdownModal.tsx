@@ -83,15 +83,15 @@ export const MatchBreakdownModal: React.FC<MatchBreakdownModalProps> = ({
           </Badge>
         </div>
 
-        {/* AI Synthesis Note if available */}
-        {aiExplanation?.summary && (
-          <div className="p-2.5 bg-white border-hard text-[11px] space-y-1">
+        {/* Grounded Synthesis / Match Rationale */}
+        {(aiExplanation?.summary || match.groundedSummary) && (
+          <div className="p-3 bg-white border-hard text-[11px] space-y-1">
             <div className="flex items-center gap-1.5 font-bold uppercase text-ink">
               <Sparkles className="w-3.5 h-3.5 text-caca-blue" />
               <span>MATCH RATIONALE</span>
             </div>
-            <p className="text-ink-muted leading-relaxed">
-              {aiExplanation.summary}
+            <p className="text-ink leading-relaxed font-sans">
+              {aiExplanation?.summary || match.groundedSummary}
             </p>
           </div>
         )}

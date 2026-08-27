@@ -309,10 +309,12 @@ export class MockAIProvider implements AIProvider {
       'c++', 'docker', 'postgresql', 'tailwind', 'machine learning', 'ai', 'ux', 'ui'
     ];
     const knownRoles = [
-      'designer', 'developer', 'engineer', 'researcher', 'architect', 'lead'
+      'designer', 'developer', 'engineer', 'researcher', 'architect', 'lead',
+      'frontend', 'backend', 'fullstack', 'student'
     ];
     const knownCategories = [
-      'healthcare', 'vision', 'assistive', 'systems', 'edtech', 'biotech', 'robotics', 'fintech'
+      'healthcare', 'health', 'vision', 'assistive', 'accessibility', 'systems', 'edtech',
+      'biotech', 'robotics', 'fintech', 'mobile', 'web', 'cloud', 'iot', 'hackathon', 'hardware'
     ];
 
     const extractedSkills = knownSkills.filter((s) => lower.includes(s));

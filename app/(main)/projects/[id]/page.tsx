@@ -439,10 +439,23 @@ export default function ProjectDetailPage() {
           ))}
         </div>
 
+        {/* Phase 5: Grounded Team Insight Callout */}
+        {teamResult.teamInsightSummary && (
+          <div className="p-3 bg-canvas-subtle border-hard text-[11px] font-mono space-y-1">
+            <div className="flex items-center gap-1.5 font-bold uppercase text-ink">
+              <Zap className="w-3.5 h-3.5 text-caca-blue fill-caca-blue" />
+              <span>TEAM SYNERGY INSIGHT</span>
+            </div>
+            <p className="text-ink leading-relaxed font-sans">
+              {teamResult.teamInsightSummary}
+            </p>
+          </div>
+        )}
+
         {/* Skill Coverage matrix */}
         <div className="pt-2">
           <p className="text-xs font-mono font-bold uppercase text-ink mb-2">
-            SKILL COVERAGE BREAKDOWN
+            SKILL & CAPABILITY COVERAGE BREAKDOWN
           </p>
           <div className="divide-y divide-ink/10 border-hard bg-canvas-subtle p-3 text-xs font-mono">
             {teamResult.skillCoverages.map((cov) => (
@@ -450,11 +463,35 @@ export default function ProjectDetailPage() {
                 key={cov.skillName}
                 className="flex items-center justify-between py-1.5"
               >
-                <span className="font-bold text-ink">{cov.skillName}</span>
-                {cov.isCovered ? (
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-ink">{cov.skillName}</span>
+                  {cov.coveredBy && (
+                    <span className="text-[10px] text-ink-muted">
+                      ({cov.coveredBy.userName} • {cov.coveredBy.proficiency}/5)
+                    </span>
+                  )}
+                </div>
+                {cov.status === "covered" || cov.isCovered ? (
                   <Badge variant="lime" size="sm">
                     COVERED ✓
                   </Badge>
+                ) : cov.status === "partially_covered" ? (
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="outline" size="sm" className="border-amber-500 text-amber-700 bg-amber-50">
+                      PARTIAL ({cov.currentProficiency}/5)
+                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMatcherRole(`${cov.skillName} Specialist`);
+                        setSelectedRequiredSkills([cov.skillName]);
+                        setIsMatcherOpen(true);
+                      }}
+                      className="px-1.5 py-0.5 bg-white hover:bg-ink hover:text-white border-hard-sm text-[10px] font-mono font-bold uppercase"
+                    >
+                      FIND CANDIDATES →
+                    </button>
+                  </div>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <Badge variant="missing" size="sm">

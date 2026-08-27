@@ -17,9 +17,17 @@ export class ProjectService {
       }
 
       const match = defaultMatchingEngine.calculateIndividualMatch(currentStudent, project);
+      const whyItems = (match.whyYouMatch || []).map((w) => w.title);
+
       return {
         ...project,
         matchScore: match.overallScore,
+        matchHighlights: match.explanation,
+        whyMatchItems: whyItems,
+        groundedSummary: match.groundedSummary,
+        strongestOverlap: match.strongestOverlap,
+        roleGapInsight: match.roleGapInsight,
+        scheduleOverlapInsight: match.scheduleOverlapInsight,
         matchBreakdown: {
           skillMatch: match.breakdown.skillScore,
           experienceMatch: match.breakdown.experienceScore,
@@ -44,9 +52,17 @@ export class ProjectService {
     if (!currentStudent) return project;
 
     const match = defaultMatchingEngine.calculateIndividualMatch(currentStudent, project);
+    const whyItems = (match.whyYouMatch || []).map((w) => w.title);
+
     return {
       ...project,
       matchScore: match.overallScore,
+      matchHighlights: match.explanation,
+      whyMatchItems: whyItems,
+      groundedSummary: match.groundedSummary,
+      strongestOverlap: match.strongestOverlap,
+      roleGapInsight: match.roleGapInsight,
+      scheduleOverlapInsight: match.scheduleOverlapInsight,
       matchBreakdown: {
         skillMatch: match.breakdown.skillScore,
         experienceMatch: match.breakdown.experienceScore,

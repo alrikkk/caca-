@@ -20,6 +20,7 @@ import {
   Check,
   UserPlus,
   Zap,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -156,6 +157,21 @@ export const ProjectFeedCard: React.FC<ProjectFeedCardProps> = ({
           <p className="text-xs sm:text-sm text-ink leading-relaxed font-sans line-clamp-2">
             {project.description}
           </p>
+
+          {/* Phase 5: Lightweight Match Insight Banner */}
+          {project.strongestOverlap && (
+            <div className="px-2.5 py-1.5 bg-canvas-subtle border-hard-sm text-[11px] font-mono text-ink flex items-center justify-between gap-2">
+              <span className="font-bold flex items-center gap-1.5 text-ink">
+                <Sparkles className="w-3.5 h-3.5 text-caca-blue shrink-0" />
+                <span>{project.strongestOverlap}</span>
+              </span>
+              {project.whyMatchItems && project.whyMatchItems.length > 0 && (
+                <span className="text-[10px] text-ink-muted hidden sm:inline-block">
+                  Overlap: {project.whyMatchItems.slice(0, 2).join(", ")}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Missing Roles with 1-Click Candidate Matching */}
           {project.missingRoles && project.missingRoles.length > 0 && (

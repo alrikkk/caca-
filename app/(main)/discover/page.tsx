@@ -85,9 +85,9 @@ export default function DiscoverPage() {
 
   const conceptExamples = [
     "Python developer interested in healthcare",
-    "React designer",
-    "ML student available evenings",
-    "UX person for accessibility project",
+    "React designer available weekends",
+    "ML student who likes accessibility",
+    "Frontend developer for a hackathon",
   ];
 
   return (

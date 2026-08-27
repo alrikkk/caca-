@@ -49,6 +49,10 @@ export interface IndividualMatchResult {
   explanation: string[];
   whyYouMatch?: StructuredMatchWhy[];
   missingPoints?: StructuredMatchWhy[];
+  groundedSummary?: string;
+  strongestOverlap?: string;
+  roleGapInsight?: string;
+  scheduleOverlapInsight?: string;
 }
 
 export interface TeamCompositionCandidate {
@@ -64,6 +68,8 @@ export interface TeamSkillCoverage {
   skillName: string;
   importance: string;
   isCovered: boolean;
+  status?: 'covered' | 'partially_covered' | 'missing';
+  currentProficiency?: number;
   coveredBy?: {
     userId: string;
     userName: string;
@@ -93,5 +99,6 @@ export interface TeamCompositionResult {
     missingRoles: string[];
     riskNotes: string[];
   };
+  teamInsightSummary?: string;
   aiExplanation?: string;
 }

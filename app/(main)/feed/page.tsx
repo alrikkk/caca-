@@ -8,12 +8,12 @@ import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 
-type FilterType = "ALL" | "HIGH_MATCH" | "URGENT" | "SYSTEMS" | "AI";
+type FilterType = "FOR_YOU" | "ALL" | "HIGH_MATCH" | "URGENT" | "AI" | "SYSTEMS";
 
 export default function FeedPage() {
   const { profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [activeFilter, setActiveFilter] = useState<FilterType>("ALL");
+  const [activeFilter, setActiveFilter] = useState<FilterType>("FOR_YOU");
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   useEffect(() => {
@@ -25,24 +25,36 @@ export default function FeedPage() {
   }, [profile]);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter((proj) => {
-      if (activeFilter === "HIGH_MATCH") {
-        return (proj.matchScore ?? 0) >= 85;
-      }
-      if (activeFilter === "URGENT") {
-        return proj.missingRoles && proj.missingRoles.length > 0;
-      }
-      if (activeFilter === "SYSTEMS") {
-        return proj.category.toLowerCase().includes("systems");
-      }
-      if (activeFilter === "AI") {
-        return (
+    let result = [...projects];
+
+    if (activeFilter === "FOR_YOU") {
+      result.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+      return result;
+    }
+
+    if (activeFilter === "HIGH_MATCH") {
+      result = result.filter((proj) => (proj.matchScore ?? 0) >= 85);
+      result.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+      return result;
+    }
+
+    if (activeFilter === "URGENT") {
+      return result.filter((proj) => proj.missingRoles && proj.missingRoles.length > 0);
+    }
+
+    if (activeFilter === "SYSTEMS") {
+      return result.filter((proj) => proj.category.toLowerCase().includes("systems"));
+    }
+
+    if (activeFilter === "AI") {
+      return result.filter(
+        (proj) =>
           proj.category.toLowerCase().includes("ai") ||
           proj.category.toLowerCase().includes("vision")
-        );
-      }
-      return true;
-    });
+      );
+    }
+
+    return result;
   }, [projects, activeFilter]);
 
   // Keyboard navigation for vertical discovery (J/K or Down/Up)
@@ -88,8 +100,9 @@ export default function FeedPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {(
             [
-              { id: "ALL", label: "ALL" },
-              { id: "HIGH_MATCH", label: "MATCH >85%" },
+              { id: "FOR_YOU", label: "RECOMMENDED FOR YOU" },
+              { id: "ALL", label: "ALL PROJECTS" },
+              { id: "HIGH_MATCH", label: "HIGH MATCH >85%" },
               { id: "URGENT", label: "MISSING ROLES" },
               { id: "AI", label: "AI & VISION" },
               { id: "SYSTEMS", label: "SYSTEMS" },
@@ -104,7 +117,7 @@ export default function FeedPage() {
               className={cn(
                 "px-3 py-1.5 text-xs font-mono font-bold uppercase border-hard whitespace-nowrap btn-tactile transition-all",
                 activeFilter === filter.id
-                  ? "bg-ink text-white shadow-hard"
+                  ? "bg-ink text-caca-lime shadow-hard"
                   : "bg-white text-ink hover:bg-canvas-subtle shadow-hard"
               )}
             >

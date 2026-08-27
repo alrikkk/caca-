@@ -210,6 +210,44 @@ export class MatchingEngine {
       explanation.unshift(`Proficient in ${topSkills.join(', ')}`);
     }
 
+    // Phase 5: Generate deterministic grounded summary & insight badges
+    const topSkillNames = matchedSkills.map((s) => s.skillName);
+    let groundedSummary = '';
+    if (overallScore >= 85) {
+      if (topSkillNames.length > 0) {
+        groundedSummary = `You're a strong ${overallScore}% match because your ${topSkillNames.join(
+          ' and '
+        )} experience directly satisfies the project's primary technical requirements, and your ${studentHours}h/wk schedule fits the target cadence.`;
+      } else {
+        groundedSummary = `You're a strong ${overallScore}% match driven by aligned domain interest in ${project.category} and compatible schedule.`;
+      }
+    } else if (overallScore >= 70) {
+      if (topSkillNames.length > 0) {
+        groundedSummary = `You have a moderate ${overallScore}% match with core proficiency in ${topSkillNames.join(
+          ', '
+        )}; addressing open requirements will optimize project fit.`;
+      } else {
+        groundedSummary = `You have a moderate ${overallScore}% match with active domain alignment in ${project.category}.`;
+      }
+    } else {
+      groundedSummary = `You have a ${overallScore}% baseline match. Participating will be a great growth opportunity to develop new skills alongside teammates.`;
+    }
+
+    const strongestOverlap =
+      topSkillNames.length > 0
+        ? `Your strongest overlap is ${topSkillNames.slice(0, 2).join(' + ')}.`
+        : `Your strongest alignment is ${project.category} domain interest.`;
+
+    const roleGapInsight =
+      project.missingRoles && project.missingRoles.length > 0
+        ? `This project still needs a ${project.missingRoles[0]} contributor.`
+        : undefined;
+
+    const scheduleOverlapInsight =
+      studentHours >= project.hoursPerWeek
+        ? `Your ${studentHours}h/wk availability satisfies the ${project.hoursPerWeek}h/wk target.`
+        : `Available for ${studentHours}h/wk vs ${project.hoursPerWeek}h/wk project commitment.`;
+
     return {
       userId: student.id,
       projectId: project.id,
@@ -227,6 +265,10 @@ export class MatchingEngine {
       explanation,
       whyYouMatch,
       missingPoints,
+      groundedSummary,
+      strongestOverlap,
+      roleGapInsight,
+      scheduleOverlapInsight,
     };
   }
 
@@ -342,6 +384,7 @@ export class MatchingEngine {
     // 1. Skill Coverage (50%)
     const skillCoverages: TeamSkillCoverage[] = [];
     const missingSkills: string[] = [];
+    const partiallyCoveredSkills: string[] = [];
 
     for (const req of project.requiredSkills || []) {
       let bestCoverer: StudentProfile | null = null;
@@ -364,17 +407,36 @@ export class MatchingEngine {
           skillName: req.skill.name,
           importance: req.importance,
           isCovered: true,
+          status: 'covered',
+          currentProficiency: highestProf,
           coveredBy: {
             userId: bestCoverer.id,
             userName: bestCoverer.fullName,
             proficiency: highestProf,
           },
         });
+      } else if (bestCoverer && highestProf > 0) {
+        skillCoverages.push({
+          skillName: req.skill.name,
+          importance: req.importance,
+          isCovered: false,
+          status: 'partially_covered',
+          currentProficiency: highestProf,
+          coveredBy: {
+            userId: bestCoverer.id,
+            userName: bestCoverer.fullName,
+            proficiency: highestProf,
+          },
+        });
+        partiallyCoveredSkills.push(req.skill.name);
+        missingSkills.push(req.skill.name);
       } else {
         skillCoverages.push({
           skillName: req.skill.name,
           importance: req.importance,
           isCovered: false,
+          status: 'missing',
+          currentProficiency: 0,
         });
         missingSkills.push(req.skill.name);
       }
@@ -467,6 +529,16 @@ export class MatchingEngine {
       riskNotes.push('Excellent full cross-functional coverage and balanced schedule');
     }
 
+    // Phase 5: Generate deterministic grounded team insight summary
+    let teamInsightSummary = '';
+    if (teamScore >= 85 && missingSkills.length === 0) {
+      teamInsightSummary = `Your squad achieves 100% cross-functional role coverage with strong weekly schedule alignment (${totalHours}h/wk total) and balanced experience levels.`;
+    } else if (missingSkills.length > 0) {
+      teamInsightSummary = `Your squad covers ${coveredCount} of ${totalRequired} core requirements. Recruiting a specialist in ${missingSkills[0]} will optimize delivery.`;
+    } else {
+      teamInsightSummary = `Squad has solid baseline synergy (${teamScore}%). Schedule commitment stands at ${totalHours}h/wk total.`;
+    }
+
     return {
       projectId: project.id,
       teamScore,
@@ -481,6 +553,7 @@ export class MatchingEngine {
         missingRoles: missingSkills.map((s) => `Specialist: ${s}`),
         riskNotes,
       },
+      teamInsightSummary,
     };
   }
 
@@ -518,14 +591,19 @@ export class MatchingEngine {
         const prospectiveTeam = [...selectedSquad, candidate];
         const synergy = this.evaluateTeamSynergy(prospectiveTeam, project);
 
-        // Bonus for covering unfulfilled skills
+        // Phase 5: Heavy marginal synergy bonus for filling uncovered skills & roles
         let unfulfilledSkillBonus = 0;
         (candidate.skills || []).forEach((s) => {
           const sLower = s.name.toLowerCase();
           if (!coveredSkills.has(sLower) && projectReqs.some((r) => r.skill.name.toLowerCase() === sLower)) {
-            unfulfilledSkillBonus += 15;
+            unfulfilledSkillBonus += 25; // Priority boost for filling missing capability track
           }
         });
+
+        // Bonus for complementary working style
+        if (candidate.workingStyle === 'collaborative' || candidate.workingStyle === 'mentor-oriented') {
+          unfulfilledSkillBonus += 5;
+        }
 
         const totalScore = synergy.teamScore + unfulfilledSkillBonus;
         if (totalScore > highestGain) {
