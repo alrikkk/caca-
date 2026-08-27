@@ -43,6 +43,7 @@ export default function StudentProfileDetailPage() {
   const [loading, setLoading] = useState(true);
   const [userTeams, setUserTeams] = useState<TeamRecord[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [followCounts, setFollowCounts] = useState({ followersCount: 24, followingCount: 16 });
 
   // Invite Modal State
@@ -62,6 +63,8 @@ export default function StudentProfileDetailPage() {
         if (activeUser?.id) {
           const following = SocialService.isFollowing(activeUser.id, userId);
           setIsFollowing(following);
+          const connected = SocialService.isConnected(activeUser.id, userId);
+          setIsConnected(connected);
         }
 
         const counts = await SocialService.getFollowCounts(userId);
@@ -176,6 +179,23 @@ export default function StudentProfileDetailPage() {
     }
   };
 
+  const handleToggleConnect = async () => {
+    if (!activeUser) {
+      window.location.href = "/login";
+      return;
+    }
+    if (isOwnProfile) return;
+
+    const previous = isConnected;
+    setIsConnected(!previous);
+
+    if (previous) {
+      await SocialService.disconnectUser(activeUser.id, student.id, isDemoMode);
+    } else {
+      await SocialService.connectUser(activeUser.id, student.id, isDemoMode);
+    }
+  };
+
   const isMockStudent = student.id.startsWith("usr_");
   const studentProjects = MOCK_PROJECTS.filter((p) => p.ownerId === student.id);
   const isOwnProfile = activeUser?.id === student.id;
@@ -183,7 +203,7 @@ export default function StudentProfileDetailPage() {
   return (
     <div className="space-y-6 max-w-2xl mx-auto pb-12">
       {/* Top Navigation */}
-      <div className="flex items-center justify-between border-b-2 border-ink pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-ink pb-3 gap-3">
         <Link
           href="/discover"
           className="inline-flex items-center gap-1.5 font-mono text-xs font-bold uppercase text-ink hover:underline"
@@ -192,7 +212,7 @@ export default function StudentProfileDetailPage() {
           <span>BACK TO DISCOVERY</span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isMockStudent && (
             <Badge variant="lime" size="sm">
               DEMO PROFILE
@@ -201,11 +221,32 @@ export default function StudentProfileDetailPage() {
 
           {!isOwnProfile && (
             <>
+              {/* Separate Connect Action */}
               <Button
-                variant={isFollowing ? "outline" : "primary"}
+                variant={isConnected ? "outline" : "primary"}
+                size="sm"
+                onClick={handleToggleConnect}
+                className="h-8 text-xs font-mono font-bold uppercase flex items-center gap-1 shadow-hard-sm"
+              >
+                {isConnected ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-caca-green" />
+                    <span>CONNECTED</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>CONNECT</span>
+                  </>
+                )}
+              </Button>
+
+              {/* Separate Follow Action */}
+              <Button
+                variant={isFollowing ? "outline" : "accent"}
                 size="sm"
                 onClick={handleToggleFollow}
-                className="flex items-center gap-1 text-xs"
+                className="h-8 text-xs font-mono font-bold uppercase flex items-center gap-1 shadow-hard-sm"
               >
                 {isFollowing ? (
                   <>
@@ -214,31 +255,33 @@ export default function StudentProfileDetailPage() {
                   </>
                 ) : (
                   <>
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>CONNECT / FOLLOW</span>
+                    <Users className="w-3.5 h-3.5" />
+                    <span>FOLLOW</span>
                   </>
                 )}
               </Button>
 
+              {/* Message Action */}
               <Link href={`/chat?recipient=${student.id}`}>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex items-center gap-1 text-xs"
+                  className="h-8 text-xs font-mono font-bold uppercase flex items-center gap-1 shadow-hard-sm"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>MESSAGE</span>
                 </Button>
               </Link>
 
+              {/* Invite Action */}
               <Button
-                variant="accent"
+                variant="primary"
                 size="sm"
                 onClick={() => {
                   setIsInviteModalOpen(true);
                   setInviteFeedback(null);
                 }}
-                className="flex items-center gap-1 text-xs"
+                className="h-8 text-xs font-mono font-bold uppercase flex items-center gap-1 shadow-hard-sm bg-caca-lime text-ink hover:bg-[#c8ea17]"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>INVITE</span>
@@ -417,26 +460,34 @@ export default function StudentProfileDetailPage() {
           VERIFIED SKILLS ({student.skills?.length || 0})
         </h2>
 
-        <div className="divide-y divide-ink/10">
-          {(student.skills || []).map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center justify-between py-2 text-xs font-mono"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-ink">{s.name}</span>
-                {s.verified && (
-                  <span className="text-[10px] px-1 bg-caca-lime border-hard-sm text-ink font-bold uppercase">
-                    VERIFIED
-                  </span>
-                )}
+        {student.skills && student.skills.length > 0 ? (
+          <div className="divide-y divide-ink/10">
+            {student.skills.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center justify-between py-2 text-xs font-mono"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-ink">{s.name}</span>
+                  {s.verified && (
+                    <span className="text-[10px] px-1 bg-caca-lime border-hard-sm text-ink font-bold uppercase">
+                      VERIFIED
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono font-black text-ink">
+                  {s.proficiency} / 5
+                </span>
               </div>
-              <span className="font-mono font-black text-ink">
-                {s.proficiency} / 5
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-4 bg-canvas-subtle border-hard text-center">
+            <p className="text-xs font-mono text-ink-muted uppercase">
+              NO VERIFIED SKILLS LISTED YET
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Interests */}
@@ -504,7 +555,7 @@ export default function StudentProfileDetailPage() {
                 <select
                   value={selectedTeamId}
                   onChange={(e) => setSelectedTeamId(e.target.value)}
-                  className="w-full h-10 px-3 bg-white border-hard uppercase text-ink focus:outline-none"
+                  className="w-full h-10 px-3 bg-white border-hard font-mono text-xs uppercase text-ink focus:outline-none shadow-hard-sm cursor-pointer"
                   required
                 >
                   {userTeams.map((t) => (

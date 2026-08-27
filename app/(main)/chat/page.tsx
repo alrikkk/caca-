@@ -261,43 +261,61 @@ function ChatPageContent() {
               </div>
 
               {/* Message List */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-white min-h-[380px] max-h-[420px]">
-                {messages.map((msg) => {
-                  const isOwn = msg.senderId === activeUserId;
-                  const senderStudent = MOCK_STUDENTS.find((s) => s.id === msg.senderId);
-                  const senderName = isOwn ? "You" : senderStudent?.fullName || "Student";
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-white min-h-[380px] max-h-[420px] flex flex-col">
+                {messages.length > 0 ? (
+                  <>
+                    {messages.map((msg) => {
+                      const isOwn = msg.senderId === activeUserId;
+                      const senderStudent = MOCK_STUDENTS.find((s) => s.id === msg.senderId);
+                      const senderName = isOwn ? "You" : senderStudent?.fullName || "Student";
 
-                  return (
-                    <div
-                      key={msg.id}
-                      className={cn(
-                        "flex flex-col max-w-[80%] text-xs",
-                        isOwn ? "ml-auto items-end" : "mr-auto items-start"
-                      )}
-                    >
-                      <span className="text-[10px] text-ink-muted uppercase font-bold mb-0.5">
-                        {senderName}
-                      </span>
-                      <div
-                        className={cn(
-                          "p-2.5 border-hard leading-relaxed shadow-hard-sm",
-                          isOwn
-                            ? "bg-caca-lime text-ink font-medium"
-                            : "bg-canvas-subtle text-ink font-medium"
-                        )}
-                      >
-                        <p className="font-sans text-xs">{msg.content}</p>
-                      </div>
-                      <span className="text-[9px] text-ink-muted mt-0.5">
-                        {new Date(msg.createdAt).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
+                      return (
+                        <div
+                          key={msg.id}
+                          className={cn(
+                            "flex flex-col max-w-[80%] text-xs",
+                            isOwn ? "ml-auto items-end" : "mr-auto items-start"
+                          )}
+                        >
+                          <span className="text-[10px] text-ink-muted uppercase font-bold mb-0.5">
+                            {senderName}
+                          </span>
+                          <div
+                            className={cn(
+                              "p-2.5 border-hard leading-relaxed shadow-hard-sm",
+                              isOwn
+                                ? "bg-caca-lime text-ink font-medium"
+                                : "bg-canvas-subtle text-ink font-medium"
+                            )}
+                          >
+                            <p className="font-sans text-xs">{msg.content}</p>
+                          </div>
+                          <span className="text-[9px] text-ink-muted mt-0.5">
+                            {new Date(msg.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2.5 my-auto">
+                    <div className="w-10 h-10 border-hard bg-canvas-subtle flex items-center justify-center shadow-hard-sm">
+                      <MessageSquare className="w-5 h-5 text-ink" />
                     </div>
-                  );
-                })}
-                <div ref={messagesEndRef} />
+                    <div className="space-y-1">
+                      <p className="font-black text-xs uppercase text-ink">
+                        NO MESSAGES YET
+                      </p>
+                      <p className="text-[11px] text-ink-muted max-w-xs">
+                        Start the conversation with your squad.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Composer */}
@@ -331,10 +349,18 @@ function ChatPageContent() {
               </form>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-ink-muted">
-              <MessageSquare className="w-8 h-8 mb-2" />
-              <p className="font-bold text-xs uppercase text-ink">SELECT A CONVERSATION</p>
-              <p className="text-xs">Choose a squad chat or candidate to start collaborating.</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3 min-h-[450px]">
+              <div className="w-12 h-12 border-hard bg-caca-lime flex items-center justify-center shadow-hard">
+                <Users className="w-6 h-6 text-ink" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-black text-sm uppercase text-ink">
+                  SELECT A CONVERSATION
+                </h3>
+                <p className="text-xs text-ink-muted max-w-xs">
+                  Choose an active sprint channel or direct message thread from the left list.
+                </p>
+              </div>
             </div>
           )}
         </main>

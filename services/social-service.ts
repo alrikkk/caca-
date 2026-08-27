@@ -1,6 +1,7 @@
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 const LOCAL_FOLLOWS_PREFIX = "caca_follows_";
+const LOCAL_CONNECTIONS_PREFIX = "caca_connections_";
 
 export class SocialService {
   /**
@@ -105,6 +106,82 @@ export class SocialService {
         if (stored) {
           const list: string[] = JSON.parse(stored);
           return list.includes(targetId);
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Connect with a student
+   */
+  static async connectUser(
+    userId: string,
+    targetUserId: string,
+    isDemo: boolean = false
+  ): Promise<{ success: boolean; error?: string }> {
+    if (userId === targetUserId) {
+      return { success: false, error: "You cannot connect with yourself." };
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        const key = `${LOCAL_CONNECTIONS_PREFIX}${userId}`;
+        const stored = localStorage.getItem(key);
+        const list: string[] = stored ? JSON.parse(stored) : [];
+        if (!list.includes(targetUserId)) {
+          list.push(targetUserId);
+          localStorage.setItem(key, JSON.stringify(list));
+        }
+      } catch (err) {
+        console.warn("Could not save connection locally:", err);
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Disconnect with a student
+   */
+  static async disconnectUser(
+    userId: string,
+    targetUserId: string,
+    isDemo: boolean = false
+  ): Promise<{ success: boolean; error?: string }> {
+    if (typeof window !== "undefined") {
+      try {
+        const key = `${LOCAL_CONNECTIONS_PREFIX}${userId}`;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const list: string[] = JSON.parse(stored);
+          const filtered = list.filter((id) => id !== targetUserId);
+          localStorage.setItem(key, JSON.stringify(filtered));
+        }
+      } catch (err) {
+        console.warn("Could not remove connection locally:", err);
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Check if userId is connected with targetUserId
+   */
+  static isConnected(userId?: string | null, targetUserId?: string | null): boolean {
+    if (!userId || !targetUserId || userId === targetUserId) return false;
+
+    if (typeof window !== "undefined") {
+      try {
+        const key = `${LOCAL_CONNECTIONS_PREFIX}${userId}`;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const list: string[] = JSON.parse(stored);
+          return list.includes(targetUserId);
         }
       } catch {
         return false;

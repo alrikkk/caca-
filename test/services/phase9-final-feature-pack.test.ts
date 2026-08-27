@@ -40,6 +40,21 @@ describe("Phase 9 Final Feature Pack Service Suite", () => {
       expect(counts.followersCount).toBeGreaterThan(0);
       expect(typeof counts.followingCount).toBe("number");
     });
+
+    it("should connect and disconnect target users separately from follows", async () => {
+      const userA = "usr_01";
+      const userB = "usr_02";
+
+      expect(SocialService.isConnected(userA, userB)).toBe(false);
+
+      const connRes = await SocialService.connectUser(userA, userB, true);
+      expect(connRes.success).toBe(true);
+      expect(SocialService.isConnected(userA, userB)).toBe(true);
+
+      const disconnRes = await SocialService.disconnectUser(userA, userB, true);
+      expect(disconnRes.success).toBe(true);
+      expect(SocialService.isConnected(userA, userB)).toBe(false);
+    });
   });
 
   describe("ClipService", () => {
