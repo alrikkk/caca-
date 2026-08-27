@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { ChatService } from "@/services/chat-service";
-import { ProfileService } from "@/services/profile-service";
 import { Conversation, ChatMessage } from "@/types/chat";
 import { StudentProfile } from "@/types/user";
 import { MOCK_STUDENTS, CURRENT_USER } from "@/lib/mock-data";
@@ -20,6 +19,7 @@ import {
   Users,
   MessageSquare,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,10 @@ function ChatPageContent() {
   const [groupName, setGroupName] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [creatingGroup, setCreatingGroup] = useState(false);
+
+  // Delete Conversation Modal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeUserId = profile?.id || CURRENT_USER.id;
@@ -155,6 +159,22 @@ function ChatPageContent() {
     }
   };
 
+  const handleDeleteConversation = async () => {
+    if (!activeConvId || isDeleting) return;
+    setIsDeleting(true);
+
+    const res = await ChatService.deleteConversation(activeConvId, activeUserId, isDemoMode);
+    setIsDeleting(false);
+
+    if (res.success) {
+      const remaining = conversations.filter((c) => c.id !== activeConvId);
+      setConversations(remaining);
+      setActiveConvId(remaining.length > 0 ? remaining[0].id : null);
+      setMessages([]);
+      setIsDeleteModalOpen(false);
+    }
+  };
+
   const activeConv = conversations.find((c) => c.id === activeConvId);
 
   // Helper to resolve the other participant in a direct conversation
@@ -265,7 +285,7 @@ function ChatPageContent() {
         <main className="md:col-span-2 flex flex-col bg-white">
           {activeConv ? (
             <>
-              {/* Thread Header with Clickable Participant Profile Link */}
+              {/* Thread Header with Clickable Participant Profile Link & Delete Conversation Action */}
               <div className="p-3 border-b-2 border-ink bg-canvas-subtle flex items-center justify-between">
                 {activeConv.isGroup ? (
                   <div className="flex items-center gap-2">
@@ -303,11 +323,22 @@ function ChatPageContent() {
                   </Link>
                 )}
 
-                {activeConv.isGroup && (
-                  <Badge variant="lime" size="sm">
-                    ACTIVE SPRINT
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {activeConv.isGroup && (
+                    <Badge variant="lime" size="sm">
+                      ACTIVE SPRINT
+                    </Badge>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteModalOpen(true)}
+                    className="p-1.5 border-hard bg-white hover:bg-caca-coral hover:text-white transition-colors text-ink shadow-hard-sm cursor-pointer"
+                    title="Delete conversation"
+                    aria-label="Delete conversation"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               {/* Message List */}
@@ -491,6 +522,39 @@ function ChatPageContent() {
               disabled={!groupName.trim() || selectedMemberIds.length === 0 || creatingGroup}
             >
               CREATE GROUP
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Conversation Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        title="DELETE CONVERSATION?"
+        className="max-w-md"
+      >
+        <div className="space-y-4 text-xs font-mono">
+          <p className="text-ink text-sm">
+            Are you sure you want to delete this conversation?
+          </p>
+          <div className="pt-2 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDeleteModalOpen(false)}
+              disabled={isDeleting}
+            >
+              CANCEL
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteConversation}
+              isLoading={isDeleting}
+              className="bg-caca-coral text-white border-hard hover:bg-caca-coral/90"
+            >
+              DELETE
             </Button>
           </div>
         </div>

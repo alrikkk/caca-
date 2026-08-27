@@ -484,4 +484,66 @@ export class ChatService {
 
     return { success: true, conversation: newGroup };
   }
+
+  /**
+   * Delete or leave a conversation
+   * For conversations created by the user or 1-to-1 direct chats, deletes the conversation.
+   * For group chats where the user is a member, removes the user membership without destroying the group for others.
+   */
+  static async deleteConversation(
+    conversationId: string,
+    userId: string,
+    isDemo: boolean = false
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!conversationId || !userId) {
+      return { success: false, error: "Missing conversation ID or user ID." };
+    }
+
+    // 1. Supabase deletion
+    if (!isDemo && isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+
+        // First attempt to delete conversation if current user is creator
+        const { error: convDeleteError } = await supabase
+          .from("conversations")
+          .delete()
+          .eq("id", conversationId)
+          .eq("created_by", userId);
+
+        if (convDeleteError) {
+          // If not creator or RLS prevents deleting entire group, remove user from conversation members
+          const { error: memberDeleteError } = await supabase
+            .from("conversation_members")
+            .delete()
+            .eq("conversation_id", conversationId)
+            .eq("user_id", userId);
+
+          if (memberDeleteError) {
+            console.error("ChatService.deleteConversation membership error:", memberDeleteError);
+            return { success: false, error: memberDeleteError.message || "Failed to delete conversation." };
+          }
+        }
+      } catch (err) {
+        console.error("ChatService.deleteConversation exception:", err);
+      }
+    }
+
+    // 2. Local Storage cache update
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
+        if (stored) {
+          const list: Conversation[] = JSON.parse(stored);
+          const updated = list.filter((c) => c.id !== conversationId);
+          localStorage.setItem(LOCAL_CONVERSATIONS_KEY, JSON.stringify(updated));
+        }
+        localStorage.removeItem(`${LOCAL_MESSAGES_PREFIX}${conversationId}`);
+      } catch (err) {
+        console.warn("Could not remove conversation locally:", err);
+      }
+    }
+
+    return { success: true };
+  }
 }

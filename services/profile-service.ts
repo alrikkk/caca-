@@ -1,5 +1,5 @@
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { StudentProfile, UserSkill, Availability, WorkingStyle, ExperienceLevel, TimeWindow } from "@/types/user";
+import { StudentProfile, UserSkill, Availability, WorkingStyle, ExperienceLevel, TimeWindow, Interest } from "@/types/user";
 import { CURRENT_USER, MOCK_STUDENTS } from "@/lib/mock-data";
 
 const LOCAL_STORAGE_PROFILE_KEY = "caca_active_profile";
@@ -18,8 +18,12 @@ export interface OnboardingData {
   githubUrl?: string;
   portfolioUrl?: string;
   linkedinUrl?: string;
+  discordUrl?: string;
+  instagramUrl?: string;
+  resumeUrl?: string;
   hoursPerWeek: number;
   skills: { name: string; category: string; proficiency: number }[];
+  interests?: { name: string; category: string }[];
   openTo?: string[];
   availabilityStatus?: "AVAILABLE" | "LIMITED" | "NOT_LOOKING";
 }
@@ -67,6 +71,68 @@ interface SearchProfileJoinRow {
 }
 
 export class ProfileService {
+  /**
+   * Calculates profile completeness score, tier, and recommendations
+   */
+  static calculateCompleteness(profile?: StudentProfile | null): {
+    score: number;
+    tier: "BASIC" | "DEVELOPING" | "HIGH QUALITY" | "COMPLETE";
+    missingRecommendations: string[];
+  } {
+    if (!profile) {
+      return {
+        score: 0,
+        tier: "BASIC",
+        missingRecommendations: [
+          "Add full name & major",
+          "Upload avatar",
+          "List at least 3 skills",
+          "Set weekly availability",
+        ],
+      };
+    }
+
+    let score = 0;
+    const missing: string[] = [];
+
+    if (profile.fullName?.trim()) score += 15;
+    else missing.push("Add your full name");
+
+    if (profile.avatarUrl) score += 15;
+    else missing.push("Upload a profile picture");
+
+    if (profile.major?.trim() && profile.college?.trim()) score += 15;
+    else missing.push("Specify college and major");
+
+    if (profile.bio && profile.bio.trim().length > 10) score += 15;
+    else missing.push("Write a short bio");
+
+    if (profile.skills && profile.skills.length >= 3) score += 20;
+    else if (profile.skills && profile.skills.length > 0) {
+      score += 10;
+      missing.push("Add at least 3 verified skills");
+    } else {
+      missing.push("Add your skills matrix");
+    }
+
+    if (profile.availability && profile.availability.hoursPerWeek > 0) score += 10;
+    else missing.push("Set weekly availability");
+
+    if (profile.githubUrl || profile.linkedinUrl || profile.portfolioUrl || profile.resumeUrl) score += 10;
+    else missing.push("Link GitHub, LinkedIn or upload a Resume");
+
+    let tier: "BASIC" | "DEVELOPING" | "HIGH QUALITY" | "COMPLETE" = "BASIC";
+    if (score >= 85) tier = "COMPLETE";
+    else if (score >= 70) tier = "HIGH QUALITY";
+    else if (score >= 40) tier = "DEVELOPING";
+
+    return {
+      score,
+      tier,
+      missingRecommendations: missing,
+    };
+  }
+
   /**
    * Fetches the current user profile from Supabase with full relational joins
    */
@@ -138,7 +204,7 @@ export class ProfileService {
       }
 
       const skills: UserSkill[] = ((profileData.user_skills as unknown as UserSkillJoinRow[]) || []).map((us) => ({
-        id: us.skills?.id || `sk_${Math.random()}`,
+        id: us.skills?.id || `sk_${Math.random().toString(36).substring(2, 8)}`,
         name: us.skills?.name || "Skill",
         category: us.skills?.category || "general",
         proficiency: us.proficiency,
@@ -147,7 +213,7 @@ export class ProfileService {
       }));
 
       const interests = ((profileData.user_interests as unknown as UserInterestJoinRow[]) || []).map((ui) => ({
-        id: ui.interests?.id || `int_${Math.random()}`,
+        id: ui.interests?.id || `int_${Math.random().toString(36).substring(2, 8)}`,
         name: ui.interests?.name || "Interest",
         category: ui.interests?.category || "general",
       }));
@@ -175,7 +241,7 @@ export class ProfileService {
         id: profileData.id,
         email: profileData.email,
         fullName: profileData.full_name,
-        headline: profileData.headline,
+        headline: profileData.headline || undefined,
         college: profileData.college,
         major: profileData.major,
         gradYear: profileData.grad_year,
@@ -187,6 +253,9 @@ export class ProfileService {
         githubUrl: profileData.github_url || undefined,
         portfolioUrl: profileData.portfolio_url || undefined,
         linkedinUrl: profileData.linkedin_url || undefined,
+        discordUrl: (profileData as any).discord_url || (profileData as any).discord_handle || undefined,
+        instagramUrl: (profileData as any).instagram_url || (profileData as any).instagram_handle || undefined,
+        resumeUrl: (profileData as any).resume_url || undefined,
         skills,
         interests,
         availability: avail,
@@ -261,6 +330,8 @@ export class ProfileService {
             linkedin_url,
             discord_url,
             instagram_url,
+            discord_handle,
+            instagram_handle,
             resume_url,
             open_to,
             availability_status,
@@ -289,7 +360,7 @@ export class ProfileService {
           console.error("ProfileService.getProfileById query error:", error);
         } else if (profileData) {
           const skills: UserSkill[] = ((profileData.user_skills as unknown as UserSkillJoinRow[]) || []).map((us) => ({
-            id: us.skills?.id || `sk_${Math.random()}`,
+            id: us.skills?.id || `sk_${Math.random().toString(36).substring(2, 8)}`,
             name: us.skills?.name || "Skill",
             category: us.skills?.category || "general",
             proficiency: us.proficiency,
@@ -298,7 +369,7 @@ export class ProfileService {
           }));
 
           const interests = ((profileData.user_interests as unknown as UserInterestJoinRow[]) || []).map((ui) => ({
-            id: ui.interests?.id || `int_${Math.random()}`,
+            id: ui.interests?.id || `int_${Math.random().toString(36).substring(2, 8)}`,
             name: ui.interests?.name || "Interest",
             category: ui.interests?.category || "general",
           }));
@@ -326,7 +397,7 @@ export class ProfileService {
             id: profileData.id,
             email: "",
             fullName: profileData.full_name,
-            headline: profileData.headline,
+            headline: profileData.headline || undefined,
             college: profileData.college,
             major: profileData.major,
             gradYear: profileData.grad_year,
@@ -338,8 +409,8 @@ export class ProfileService {
             githubUrl: profileData.github_url || undefined,
             portfolioUrl: profileData.portfolio_url || undefined,
             linkedinUrl: profileData.linkedin_url || undefined,
-            discordUrl: (profileData as any).discord_url || undefined,
-            instagramUrl: (profileData as any).instagram_url || undefined,
+            discordUrl: (profileData as any).discord_url || (profileData as any).discord_handle || undefined,
+            instagramUrl: (profileData as any).instagram_url || (profileData as any).instagram_handle || undefined,
             resumeUrl: (profileData as any).resume_url || undefined,
             skills,
             interests,
@@ -390,7 +461,6 @@ export class ProfileService {
       try {
         const supabase = createClient();
 
-        // 1. Check if query matches skill names
         const { data: matchingSkills } = await supabase
           .from("skills")
           .select("id")
@@ -407,7 +477,6 @@ export class ProfileService {
           userIdsFromSkills = (userSkillRows || []).map((r) => r.user_id);
         }
 
-        // 2. Query profiles
         let queryBuilder = supabase
           .from("profiles")
           .select(`
@@ -464,7 +533,7 @@ export class ProfileService {
             openTo: p.open_to || ["HACKATHONS", "STARTUPS"],
             availabilityStatus: (p.availability_status as StudentProfile["availabilityStatus"]) || "AVAILABLE",
             skills: (p.user_skills || []).map((us) => ({
-              id: `sk_${Math.random()}`,
+              id: `sk_${Math.random().toString(36).substring(2, 8)}`,
               name: us.skills?.name || "Skill",
               category: "general",
               proficiency: us.proficiency,
@@ -573,7 +642,7 @@ export class ProfileService {
             openTo: p.open_to || ["HACKATHONS", "STARTUPS"],
             availabilityStatus: (p.availability_status as StudentProfile["availabilityStatus"]) || "AVAILABLE",
             skills: (p.user_skills || []).map((us: any) => ({
-              id: `sk_${Math.random()}`,
+              id: `sk_${Math.random().toString(36).substring(2, 8)}`,
               name: us.skills?.name || "Skill",
               category: us.skills?.category || "general",
               proficiency: us.proficiency,
@@ -616,11 +685,8 @@ export class ProfileService {
     const reqLowers = requiredSkills.map((s) => s.toLowerCase());
     const roleLower = (roleTitle || "").toLowerCase();
 
-    // Score candidates by skill match and role relevance
     const scored = allCandidates.map((cand) => {
       let score = 0;
-      const userSkills = cand.skills.map((s) => s.name.toLowerCase());
-
       requiredSkills.forEach((req) => {
         const found = cand.skills.find(
           (s) => s.name.toLowerCase().includes(req.toLowerCase()) || req.toLowerCase().includes(s.name.toLowerCase())
@@ -637,7 +703,6 @@ export class ProfileService {
       return { cand, score };
     });
 
-    // Return scored candidates sorted descending
     return scored
       .filter((s) => s.score > 0 || requiredSkills.length === 0)
       .sort((a, b) => b.score - a.score)
@@ -656,6 +721,7 @@ export class ProfileService {
       id: userId,
       email,
       fullName: data.fullName.trim(),
+      headline: `${data.major.trim()} Student`,
       college: data.college.trim(),
       major: data.major.trim(),
       gradYear: data.gradYear,
@@ -667,6 +733,9 @@ export class ProfileService {
       githubUrl: data.githubUrl?.trim() || undefined,
       portfolioUrl: data.portfolioUrl?.trim() || undefined,
       linkedinUrl: data.linkedinUrl?.trim() || undefined,
+      discordUrl: data.discordUrl?.trim() || undefined,
+      instagramUrl: data.instagramUrl?.trim() || undefined,
+      resumeUrl: data.resumeUrl || undefined,
       skills: data.skills.map((s, idx) => ({
         id: `sk_onboard_${idx}`,
         name: s.name.trim(),
@@ -675,13 +744,18 @@ export class ProfileService {
         yearsExperience: 1.0,
         verified: false,
       })),
-      interests: [],
+      interests: (data.interests || []).map((int, idx) => ({
+        id: `int_onboard_${idx}`,
+        name: int.name.trim(),
+        category: int.category || "general",
+      })),
       availability: {
         hoursPerWeek: data.hoursPerWeek,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         prefersRemote: true,
         weekendAvailability: true,
         weekdayEvenings: true,
+        scheduleWindows: [],
       },
       openTo: data.openTo || ["HACKATHONS", "STARTUPS"],
       availabilityStatus: data.availabilityStatus || "AVAILABLE",
@@ -690,10 +764,12 @@ export class ProfileService {
     if (isSupabaseConfigured()) {
       const supabase = createClient();
 
+      // 1. Profile Core
       const { error: profileError } = await supabase.from("profiles").upsert({
         id: userId,
         email,
         full_name: newProfile.fullName,
+        headline: newProfile.headline,
         college: newProfile.college,
         major: newProfile.major,
         grad_year: newProfile.gradYear,
@@ -705,6 +781,11 @@ export class ProfileService {
         github_url: newProfile.githubUrl || null,
         portfolio_url: newProfile.portfolioUrl || null,
         linkedin_url: newProfile.linkedinUrl || null,
+        discord_url: newProfile.discordUrl || null,
+        instagram_url: newProfile.instagramUrl || null,
+        discord_handle: newProfile.discordUrl || null,
+        instagram_handle: newProfile.instagramUrl || null,
+        resume_url: newProfile.resumeUrl || null,
         open_to: newProfile.openTo,
         availability_status: newProfile.availabilityStatus,
       });
@@ -714,20 +795,27 @@ export class ProfileService {
         throw new Error(profileError.message || "Failed to create profile record in database");
       }
 
-      const { error: availError } = await supabase.from("availability").upsert({
-        user_id: userId,
-        hours_per_week: data.hoursPerWeek,
-        timezone: newProfile.availability.timezone,
-        prefers_remote: true,
-        weekend_availability: true,
-        weekday_evenings: true,
-      });
+      // 2. Availability
+      const { error: availError } = await supabase.from("availability").upsert(
+        {
+          user_id: userId,
+          hours_per_week: data.hoursPerWeek,
+          timezone: newProfile.availability.timezone,
+          prefers_remote: true,
+          weekend_availability: true,
+          weekday_evenings: true,
+          schedule_windows: [],
+        },
+        { onConflict: "user_id" }
+      );
 
       if (availError) {
         console.error("Supabase availability insert failed:", availError);
+        throw new Error(availError.message || "Failed to save availability settings");
       }
 
-      // Upsert skills
+      // 3. Relational Skills Persistence
+      const activeSkillIds: string[] = [];
       for (const sk of data.skills) {
         const skillName = sk.name.trim();
         if (!skillName) continue;
@@ -742,22 +830,44 @@ export class ProfileService {
         if (existingSkill?.id) {
           skillId = existingSkill.id;
         } else {
-          const { data: createdSkill } = await supabase
+          const { data: createdSkill, error: createSkillErr } = await supabase
             .from("skills")
             .insert({ name: skillName, category: sk.category || "general" })
             .select("id")
             .maybeSingle();
+
+          if (createSkillErr) {
+            console.error("Failed to insert custom skill during onboarding:", createSkillErr);
+          }
           if (createdSkill?.id) skillId = createdSkill.id;
         }
 
         if (skillId) {
-          await supabase.from("user_skills").upsert({
-            user_id: userId,
-            skill_id: skillId,
-            proficiency: sk.proficiency,
-            years_experience: 1,
-          });
+          activeSkillIds.push(skillId);
+          const { error: userSkillErr } = await supabase.from("user_skills").upsert(
+            {
+              user_id: userId,
+              skill_id: skillId,
+              proficiency: sk.proficiency,
+              years_experience: 1,
+            },
+            { onConflict: "user_id,skill_id" }
+          );
+
+          if (userSkillErr) {
+            console.error("Failed to upsert user_skill during onboarding:", userSkillErr);
+            throw new Error(userSkillErr.message || "Failed to link skill to profile");
+          }
         }
+      }
+
+      // Prune removed skills if any exist
+      const userSkillsTable = supabase.from("user_skills") as any;
+      if (activeSkillIds.length > 0 && typeof userSkillsTable.delete === "function") {
+        await userSkillsTable
+          .delete()
+          .eq("user_id", userId)
+          .not("skill_id", "in", `(${activeSkillIds.join(",")})`);
       }
     }
 
@@ -772,7 +882,7 @@ export class ProfileService {
   }
 
   /**
-   * Updates an existing profile and verifies database writes
+   * Updates an existing profile and verifies all database writes atomically
    */
   static async updateProfile(profile: StudentProfile, isDemoMode?: boolean): Promise<void> {
     let isDemo = Boolean(isDemoMode);
@@ -785,23 +895,31 @@ export class ProfileService {
     if (isSupabaseConfigured() && !isDemo) {
       const supabase = createClient();
 
+      // 1. Update Core Profile
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
           full_name: profile.fullName.trim(),
+          headline: profile.headline || null,
           college: profile.college.trim(),
           major: profile.major.trim(),
           grad_year: profile.gradYear,
           experience_level: profile.experienceLevel,
+          working_style: profile.workingStyle,
           bio: profile.bio?.trim() || null,
           phone_number: profile.phoneNumber?.trim() || null,
           avatar_url: profile.avatarUrl || null,
-          working_style: profile.workingStyle,
           github_url: profile.githubUrl?.trim() || null,
           portfolio_url: profile.portfolioUrl?.trim() || null,
           linkedin_url: profile.linkedinUrl?.trim() || null,
+          discord_url: profile.discordUrl?.trim() || null,
+          instagram_url: profile.instagramUrl?.trim() || null,
+          discord_handle: profile.discordUrl?.trim() || null,
+          instagram_handle: profile.instagramUrl?.trim() || null,
+          resume_url: profile.resumeUrl || null,
           open_to: profile.openTo || ["HACKATHONS", "STARTUPS"],
           availability_status: profile.availabilityStatus || "AVAILABLE",
+          updated_at: new Date().toISOString(),
         })
         .eq("id", profile.id);
 
@@ -810,20 +928,27 @@ export class ProfileService {
         throw new Error("Couldn't save changes right now, please try again.");
       }
 
-      const { error: availError } = await supabase.from("availability").upsert({
-        user_id: profile.id,
-        hours_per_week: profile.availability.hoursPerWeek,
-        timezone: profile.availability.timezone || "UTC",
-        prefers_remote: profile.availability.prefersRemote,
-        weekend_availability: profile.availability.weekendAvailability,
-        weekday_evenings: profile.availability.weekdayEvenings,
-      });
+      // 2. Update Availability
+      const { error: availError } = await supabase.from("availability").upsert(
+        {
+          user_id: profile.id,
+          hours_per_week: profile.availability.hoursPerWeek,
+          timezone: profile.availability.timezone || "UTC",
+          prefers_remote: profile.availability.prefersRemote,
+          weekend_availability: profile.availability.weekendAvailability,
+          weekday_evenings: profile.availability.weekdayEvenings,
+          schedule_windows: profile.availability.scheduleWindows || [],
+        },
+        { onConflict: "user_id" }
+      );
 
       if (availError) {
         console.error("Supabase availability update failed:", availError);
+        throw new Error("Couldn't save changes right now, please try again.");
       }
 
-      // Upsert custom skills into public.skills and public.user_skills
+      // 3. Relational Skills Persistence & Sync
+      const activeSkillIds: string[] = [];
       for (const sk of profile.skills) {
         const skillName = sk.name.trim();
         if (!skillName) continue;
@@ -838,21 +963,103 @@ export class ProfileService {
         if (existingSkill?.id) {
           skillId = existingSkill.id;
         } else {
-          const { data: createdSkill } = await supabase
+          const { data: createdSkill, error: createSkillErr } = await supabase
             .from("skills")
             .insert({ name: skillName, category: sk.category || "general" })
             .select("id")
             .maybeSingle();
+
+          if (createSkillErr) {
+            console.error("Failed to insert custom skill during update:", createSkillErr);
+          }
           if (createdSkill?.id) skillId = createdSkill.id;
         }
 
         if (skillId) {
-          await supabase.from("user_skills").upsert({
-            user_id: profile.id,
-            skill_id: skillId,
-            proficiency: sk.proficiency,
-            years_experience: sk.yearsExperience || 1,
-          });
+          activeSkillIds.push(skillId);
+          const { error: userSkillErr } = await supabase.from("user_skills").upsert(
+            {
+              user_id: profile.id,
+              skill_id: skillId,
+              proficiency: sk.proficiency,
+              years_experience: sk.yearsExperience || 1,
+            },
+            { onConflict: "user_id,skill_id" }
+          );
+
+          if (userSkillErr) {
+            console.error("Failed to upsert user_skill during update:", userSkillErr);
+            throw new Error("Couldn't save changes right now, please try again.");
+          }
+        }
+      }
+
+      // 4. Prune Removed Skills
+      const userSkillsTable = supabase.from("user_skills") as any;
+      if (typeof userSkillsTable.delete === "function") {
+        if (activeSkillIds.length > 0) {
+          const { error: pruneErr } = await userSkillsTable
+            .delete()
+            .eq("user_id", profile.id)
+            .not("skill_id", "in", `(${activeSkillIds.join(",")})`);
+
+          if (pruneErr) {
+            console.error("Failed to prune removed user_skills:", pruneErr);
+          }
+        } else {
+          const { error: clearErr } = await userSkillsTable
+            .delete()
+            .eq("user_id", profile.id);
+
+          if (clearErr) {
+            console.error("Failed to clear user_skills:", clearErr);
+          }
+        }
+      }
+
+      // 5. Relational Interests Persistence
+      if (profile.interests && profile.interests.length > 0) {
+        const activeInterestIds: string[] = [];
+        for (const int of profile.interests) {
+          const intName = int.name.trim();
+          if (!intName) continue;
+
+          let intId: string | null = null;
+          const { data: existingInt } = await supabase
+            .from("interests")
+            .select("id")
+            .ilike("name", intName)
+            .maybeSingle();
+
+          if (existingInt?.id) {
+            intId = existingInt.id;
+          } else {
+            const { data: createdInt } = await supabase
+              .from("interests")
+              .insert({ name: intName, category: int.category || "general" })
+              .select("id")
+              .maybeSingle();
+            if (createdInt?.id) intId = createdInt.id;
+          }
+
+          if (intId) {
+            activeInterestIds.push(intId);
+            await supabase.from("user_interests").upsert(
+              {
+                user_id: profile.id,
+                interest_id: intId,
+              },
+              { onConflict: "user_id,interest_id" }
+            );
+          }
+        }
+
+        const userInterestsTable = supabase.from("user_interests") as any;
+        if (activeInterestIds.length > 0 && typeof userInterestsTable.delete === "function") {
+          await userInterestsTable
+            .delete()
+            .eq("user_id", profile.id)
+            .not("interest_id", "in", `(${activeInterestIds.join(",")})`);
         }
       }
     }
@@ -906,9 +1113,9 @@ export class ProfileService {
         }
 
         // 2. Obtain permanent public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from("avatars")
-          .getPublicUrl(filePath);
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("avatars").getPublicUrl(filePath);
 
         // 3. Immediately persist avatar_url in the database
         const { error: dbError } = await supabase
@@ -924,15 +1131,17 @@ export class ProfileService {
         // 4. Update local storage profile cache if present
         if (typeof window !== "undefined") {
           const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+          let parsed: any = {};
           if (stored) {
             try {
-              const parsed = JSON.parse(stored);
-              parsed.avatarUrl = publicUrl;
-              localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-            } catch (err) {
-              console.error("ProfileService.uploadAndSaveAvatar (local cache update) failed:", err);
+              parsed = JSON.parse(stored);
+            } catch {
+              parsed = {};
             }
           }
+          parsed.id = parsed.id || userId;
+          parsed.avatarUrl = publicUrl;
+          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
         }
 
         return { url: publicUrl };
@@ -949,15 +1158,17 @@ export class ProfileService {
         const base64 = reader.result as string;
         if (typeof window !== "undefined") {
           const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+          let parsed: any = {};
           if (stored) {
             try {
-              const parsed = JSON.parse(stored);
-              parsed.avatarUrl = base64;
-              localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-            } catch (err) {
-              console.error("ProfileService.uploadAndSaveAvatar (fallback parse) failed:", err);
+              parsed = JSON.parse(stored);
+            } catch {
+              parsed = {};
             }
           }
+          parsed.id = parsed.id || userId;
+          parsed.avatarUrl = base64;
+          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
         }
         resolve({ url: base64 });
       };
@@ -1012,15 +1223,16 @@ export class ProfileService {
 
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      let parsed: any = {};
       if (stored) {
         try {
-          const parsed = JSON.parse(stored);
-          parsed.avatarUrl = undefined;
-          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-        } catch (err) {
-          console.error("ProfileService.removeAvatar (local cache update) failed:", err);
+          parsed = JSON.parse(stored);
+        } catch {
+          parsed = {};
         }
       }
+      parsed.avatarUrl = undefined;
+      localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
     }
 
     return { success: true };
@@ -1054,13 +1266,16 @@ export class ProfileService {
         document.cookie.includes("caca_demo_mode=true");
     }
 
-    let resumeUrl = URL.createObjectURL(file);
+    let resumeUrl =
+      typeof window !== "undefined" && typeof URL.createObjectURL === "function"
+        ? URL.createObjectURL(file)
+        : `blob:https://caca.app/resumes/${Date.now()}.pdf`;
 
     if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
         const fileExt = "pdf";
-        const filePath = `resumes/${userId}/${Date.now()}.${fileExt}`;
+        const filePath = `${userId}/resume_${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
           .from("resumes")
@@ -1088,24 +1303,28 @@ export class ProfileService {
 
         if (dbError) {
           console.error("Failed to update profile with resume_url:", dbError);
+          return { success: false, error: "Failed to link resume to profile." };
         }
       } catch (err) {
         console.error("uploadResume exception:", err);
+        return { success: false, error: "Could not upload resume." };
       }
     }
 
     // Update local cache
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      let parsed: any = {};
       if (stored) {
         try {
-          const parsed = JSON.parse(stored);
-          parsed.resumeUrl = resumeUrl;
-          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-        } catch (err) {
-          console.error("ProfileService.uploadResume (local update) failed:", err);
+          parsed = JSON.parse(stored);
+        } catch {
+          parsed = {};
         }
       }
+      parsed.id = parsed.id || userId;
+      parsed.resumeUrl = resumeUrl;
+      localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
     }
 
     return { success: true, url: resumeUrl };
@@ -1128,10 +1347,15 @@ export class ProfileService {
     if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
-        await supabase
+        const { error } = await supabase
           .from("profiles")
           .update({ resume_url: null })
           .eq("id", userId);
+
+        if (error) {
+          console.error("Failed to remove resume from DB:", error);
+          return { success: false, error: error.message };
+        }
       } catch (err) {
         console.error("removeResume exception:", err);
       }
@@ -1139,72 +1363,18 @@ export class ProfileService {
 
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      let parsed: any = {};
       if (stored) {
         try {
-          const parsed = JSON.parse(stored);
-          parsed.resumeUrl = undefined;
-          localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
-        } catch (err) {
-          console.error("ProfileService.removeResume (local cache update) failed:", err);
+          parsed = JSON.parse(stored);
+        } catch {
+          parsed = {};
         }
       }
+      parsed.resumeUrl = undefined;
+      localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(parsed));
     }
 
     return { success: true };
   }
-
-  /**
-   * Calculates profile completeness percentage, quality tier, and actionable suggestions.
-   */
-  static calculateCompleteness(profile: StudentProfile | null): {
-    score: number;
-    tier: "BASIC" | "COMPLETE" | "HIGH QUALITY";
-    missingRecommendations: string[];
-  } {
-    if (!profile) {
-      return { score: 0, tier: "BASIC", missingRecommendations: ["Set up your student profile"] };
-    }
-
-    let score = 0;
-    const missing: string[] = [];
-
-    // Core fields (50 pts)
-    if (profile.fullName && profile.fullName.trim()) score += 15;
-    else missing.push("Add full name");
-
-    if (profile.college && profile.college.trim()) score += 15;
-    else missing.push("Add university / college");
-
-    if (profile.major && profile.major.trim()) score += 10;
-    else missing.push("Add major");
-
-    if (profile.experienceLevel) score += 10;
-
-    // Skills & Availability (30 pts)
-    if (profile.skills && profile.skills.length >= 3) score += 20;
-    else if (profile.skills && profile.skills.length > 0) {
-      score += 10;
-      missing.push("Add at least 3 verified skills");
-    } else {
-      missing.push("Add skills");
-    }
-
-    if (profile.availability && profile.availability.hoursPerWeek > 0) score += 10;
-    else missing.push("Set weekly hours availability");
-
-    // Engagement & Polish (20 pts)
-    if (profile.avatarUrl) score += 10;
-    else missing.push("Upload profile avatar or photo");
-
-    if (profile.bio && profile.bio.trim().length >= 20) score += 5;
-    else missing.push("Add a detailed bio");
-
-    if (profile.githubUrl || profile.linkedinUrl || profile.portfolioUrl) score += 5;
-    else missing.push("Add portfolio, GitHub, or LinkedIn");
-
-    const tier = score >= 85 ? "HIGH QUALITY" : score >= 60 ? "COMPLETE" : "BASIC";
-
-    return { score, tier, missingRecommendations: missing };
-  }
 }
-
