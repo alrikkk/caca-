@@ -121,6 +121,29 @@ export class ApplicationService {
       }
     }
 
+    // Trigger notification to project owner
+    try {
+      const proj = MOCK_PROJECTS.find((p) => p.id === projectId || toProjectUuid(p.id) === toProjectUuid(projectId));
+      if (proj && proj.ownerId && proj.ownerId !== userId) {
+        const { NotificationService } = await import("./notification-service");
+        const { MOCK_STUDENTS } = await import("@/lib/mock-data");
+        const applicantStudent = MOCK_STUDENTS.find((s) => s.id === userId);
+        const applicantName = applicantStudent?.fullName || "A candidate";
+        await NotificationService.createNotification({
+          userId: proj.ownerId,
+          actorId: userId,
+          actorName: applicantName,
+          actorAvatarUrl: applicantStudent?.avatarUrl,
+          title: "New Project Application",
+          message: `${applicantName} applied to join your project "${proj.title}".`,
+          type: "application_status",
+          link: `/projects/${projectId}`,
+        });
+      }
+    } catch {
+      // Notification is non-blocking
+    }
+
     return { success: true, application: newApp };
   }
 

@@ -47,6 +47,26 @@ export class SocialService {
       }
     }
 
+    // Trigger recipient notification
+    try {
+      const { NotificationService } = await import("./notification-service");
+      const { MOCK_STUDENTS } = await import("@/lib/mock-data");
+      const follower = MOCK_STUDENTS.find((s) => s.id === followerId);
+      const followerName = follower?.fullName || "A student";
+      await NotificationService.createNotification({
+        userId: followingId,
+        actorId: followerId,
+        actorName: followerName,
+        actorAvatarUrl: follower?.avatarUrl,
+        title: "New Follower",
+        message: `${followerName} started following you.`,
+        type: "follow",
+        link: `/profile/${followerId}`,
+      });
+    } catch {
+      // Notification is non-blocking
+    }
+
     return { success: true };
   }
 
@@ -139,6 +159,26 @@ export class SocialService {
       } catch (err) {
         console.warn("Could not save connection locally:", err);
       }
+    }
+
+    // Trigger recipient notification
+    try {
+      const { NotificationService } = await import("./notification-service");
+      const { MOCK_STUDENTS } = await import("@/lib/mock-data");
+      const student = MOCK_STUDENTS.find((s) => s.id === userId);
+      const studentName = student?.fullName || "A student";
+      await NotificationService.createNotification({
+        userId: targetUserId,
+        actorId: userId,
+        actorName: studentName,
+        actorAvatarUrl: student?.avatarUrl,
+        title: "New Connection",
+        message: `${studentName} connected with you on Caca.`,
+        type: "connect",
+        link: `/profile/${userId}`,
+      });
+    } catch {
+      // Notification is non-blocking
     }
 
     return { success: true };

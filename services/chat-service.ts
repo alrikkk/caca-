@@ -1,6 +1,6 @@
 import { Conversation, ChatMessage, ConversationMember } from "@/types/chat";
 import { StudentProfile } from "@/types/user";
-import { MOCK_CONVERSATIONS, MOCK_MESSAGES, MOCK_STUDENTS, CURRENT_USER } from "@/lib/mock-data";
+import { MOCK_CONVERSATIONS, MOCK_MESSAGES, MOCK_STUDENTS } from "@/lib/mock-data";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 const LOCAL_CONVERSATIONS_KEY = "caca_user_conversations";
@@ -8,7 +8,7 @@ const LOCAL_MESSAGES_PREFIX = "caca_chat_msgs_";
 
 export class ChatService {
   /**
-   * Get all active conversations for the specified user
+   * Get all active conversations for the specified user with resolved participant identities
    */
   static async getConversations(userId: string): Promise<Conversation[]> {
     let localConvs: Conversation[] = [];
@@ -32,7 +32,122 @@ export class ChatService {
       combinedMap.set(c.id, c);
     }
 
-    return Array.from(combinedMap.values()).sort(
+    // Supabase remote conversations
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data: memberRows, error } = await supabase
+          .from("conversation_members")
+          .select("conversation_id, conversations(*)")
+          .eq("user_id", userId);
+
+        if (error) {
+          console.error("ChatService.getConversations query error:", error);
+        } else if (memberRows) {
+          for (const row of memberRows) {
+            const conv = row.conversations;
+            if (conv && !combinedMap.has(conv.id)) {
+              const { data: allMembers, error: membersErr } = await supabase
+                .from("conversation_members")
+                .select("user_id, joined_at, profiles(*)")
+                .eq("conversation_id", conv.id);
+
+              if (membersErr) {
+                console.error("ChatService.getConversations members query error:", membersErr);
+              }
+
+              const members: ConversationMember[] = (allMembers || []).map((m: any) => ({
+                conversationId: conv.id,
+                userId: m.user_id,
+                user: m.profiles
+                  ? {
+                      id: m.profiles.id,
+                      email: m.profiles.email || `${m.user_id}@campus.edu`,
+                      fullName: m.profiles.full_name || "Student",
+                      college: m.profiles.college || "Campus University",
+                      major: m.profiles.major || "Computer Science",
+                      gradYear: m.profiles.grad_year || 2026,
+                      experienceLevel: (m.profiles.experience_level as any) || "junior",
+                      workingStyle: (m.profiles.working_style as any) || "collaborative",
+                      headline: m.profiles.headline || undefined,
+                      avatarUrl: m.profiles.avatar_url || undefined,
+                      skills: m.profiles.skills || [],
+                      interests: [],
+                      availability: {
+                        hoursPerWeek: 10,
+                        timezone: "EST",
+                        prefersRemote: true,
+                        weekendAvailability: true,
+                        weekdayEvenings: true,
+                      },
+                    }
+                  : MOCK_STUDENTS.find((s) => s.id === m.user_id),
+                joinedAt: m.joined_at,
+              }));
+
+              const { data: lastMsgData } = await supabase
+                .from("messages")
+                .select("*")
+                .eq("conversation_id", conv.id)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              combinedMap.set(conv.id, {
+                id: conv.id,
+                name: conv.name || undefined,
+                isGroup: Boolean(conv.is_group),
+                members,
+                lastMessage: lastMsgData
+                  ? {
+                      id: lastMsgData.id,
+                      conversationId: lastMsgData.conversation_id,
+                      senderId: lastMsgData.sender_id,
+                      content: lastMsgData.content,
+                      createdAt: lastMsgData.created_at,
+                    }
+                  : undefined,
+                createdAt: conv.created_at,
+                updatedAt: conv.updated_at,
+                unreadCount: 0,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("ChatService.getConversations exception:", err);
+      }
+    }
+
+    const populated = Array.from(combinedMap.values()).map((c) => {
+      const updatedMembers = c.members.map((m) => {
+        if (!m.user) {
+          const student = MOCK_STUDENTS.find((s) => s.id === m.userId);
+          if (student) return { ...m, user: student };
+        }
+        return m;
+      });
+
+      // For 1-on-1 direct conversations, name should be the other participant
+      let convName = c.name;
+      if (!c.isGroup) {
+        const otherMember = updatedMembers.find((m) => m.userId !== userId) || updatedMembers[0];
+        if (otherMember?.user?.fullName) {
+          convName = otherMember.user.fullName;
+        } else if (otherMember?.userId) {
+          const matched = MOCK_STUDENTS.find((s) => s.id === otherMember.userId);
+          if (matched) convName = matched.fullName;
+        }
+      }
+
+      return {
+        ...c,
+        name: convName,
+        members: updatedMembers,
+      };
+    });
+
+    return populated.sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
   }
@@ -63,6 +178,33 @@ export class ChatService {
       combinedMap.set(m.id, m);
     }
 
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.error("ChatService.getMessages query error:", error);
+        } else if (data) {
+          for (const m of data) {
+            combinedMap.set(m.id, {
+              id: m.id,
+              conversationId: m.conversation_id,
+              senderId: m.sender_id,
+              content: m.content,
+              createdAt: m.created_at,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("ChatService.getMessages exception:", err);
+      }
+    }
+
     return Array.from(combinedMap.values()).sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
@@ -88,7 +230,32 @@ export class ChatService {
       createdAt: new Date().toISOString(),
     };
 
-    // 1. Local Storage persistence
+    // 1. Supabase persistence
+    if (!isDemo && isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: conversationId,
+            sender_id: senderId,
+            content: text,
+          })
+          .select("id, created_at")
+          .maybeSingle();
+
+        if (error) {
+          console.error("ChatService.sendMessage insert error:", error);
+        } else if (data?.id) {
+          newMsg.id = data.id;
+          if (data.created_at) newMsg.createdAt = data.created_at;
+        }
+      } catch (err) {
+        console.error("ChatService.sendMessage exception:", err);
+      }
+    }
+
+    // 2. Local Storage persistence
     if (typeof window !== "undefined") {
       try {
         const key = `${LOCAL_MESSAGES_PREFIX}${conversationId}`;
@@ -107,20 +274,6 @@ export class ChatService {
         localStorage.setItem(LOCAL_CONVERSATIONS_KEY, JSON.stringify(updated));
       } catch (err) {
         console.warn("Could not save message locally:", err);
-      }
-    }
-
-    // 2. Supabase persistence
-    if (!isDemo && isSupabaseConfigured()) {
-      try {
-        const supabase = createClient();
-        await supabase.from("messages").insert({
-          conversation_id: conversationId,
-          sender_id: senderId,
-          content: text,
-        });
-      } catch (err) {
-        // Fall back gracefully
       }
     }
 
@@ -151,14 +304,19 @@ export class ChatService {
     }
 
     const targetStudent = MOCK_STUDENTS.find((s) => s.id === targetUserId);
-    const convId = `conv_${Date.now()}`;
+    let convId = `conv_${Date.now()}`;
 
     const newConv: Conversation = {
       id: convId,
       name: targetStudent?.fullName || "Student",
       isGroup: false,
       members: [
-        { conversationId: convId, userId, joinedAt: new Date().toISOString() },
+        {
+          conversationId: convId,
+          userId,
+          user: MOCK_STUDENTS.find((s) => s.id === userId),
+          joinedAt: new Date().toISOString(),
+        },
         {
           conversationId: convId,
           userId: targetUserId,
@@ -171,6 +329,59 @@ export class ChatService {
       unreadCount: 0,
     };
 
+    // 1. Supabase persistence
+    if (!isDemo && isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data: convData, error: convError } = await supabase
+          .from("conversations")
+          .insert({
+            name: targetStudent?.fullName || "Direct Conversation",
+            is_group: false,
+            created_by: userId,
+          })
+          .select("id, created_at, updated_at")
+          .maybeSingle();
+
+        if (convError) {
+          console.error("ChatService.createDirectConversation insert error:", convError);
+        } else if (convData?.id) {
+          convId = convData.id;
+          newConv.id = convData.id;
+          newConv.createdAt = convData.created_at || newConv.createdAt;
+          newConv.updatedAt = convData.updated_at || newConv.updatedAt;
+          newConv.members = [
+            {
+              conversationId: convData.id,
+              userId,
+              user: MOCK_STUDENTS.find((s) => s.id === userId),
+              joinedAt: new Date().toISOString(),
+            },
+            {
+              conversationId: convData.id,
+              userId: targetUserId,
+              user: targetStudent,
+              joinedAt: new Date().toISOString(),
+            },
+          ];
+
+          const { error: membersError } = await supabase
+            .from("conversation_members")
+            .insert([
+              { conversation_id: convData.id, user_id: userId },
+              { conversation_id: convData.id, user_id: targetUserId },
+            ]);
+
+          if (membersError) {
+            console.error("ChatService.createDirectConversation members error:", membersError);
+          }
+        }
+      } catch (err) {
+        console.error("ChatService.createDirectConversation exception:", err);
+      }
+    }
+
+    // 2. Local Storage persistence
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
@@ -193,9 +404,14 @@ export class ChatService {
     memberIds: string[],
     isDemo: boolean = false
   ): Promise<{ success: boolean; conversation?: Conversation; error?: string }> {
-    const convId = `conv_grp_${Date.now()}`;
+    let convId = `conv_grp_${Date.now()}`;
     const allMembers: ConversationMember[] = [
-      { conversationId: convId, userId: creatorId, joinedAt: new Date().toISOString() },
+      {
+        conversationId: convId,
+        userId: creatorId,
+        user: MOCK_STUDENTS.find((s) => s.id === creatorId),
+        joinedAt: new Date().toISOString(),
+      },
       ...memberIds.map((id) => ({
         conversationId: convId,
         userId: id,
@@ -214,6 +430,48 @@ export class ChatService {
       unreadCount: 0,
     };
 
+    // 1. Supabase persistence
+    if (!isDemo && isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        const { data: convData, error: convError } = await supabase
+          .from("conversations")
+          .insert({
+            name: name.trim() || "Squad Group",
+            is_group: true,
+            created_by: creatorId,
+          })
+          .select("id, created_at, updated_at")
+          .maybeSingle();
+
+        if (convError) {
+          console.error("ChatService.createGroupConversation insert error:", convError);
+        } else if (convData?.id) {
+          convId = convData.id;
+          newGroup.id = convData.id;
+          newGroup.createdAt = convData.created_at || newGroup.createdAt;
+          newGroup.updatedAt = convData.updated_at || newGroup.updatedAt;
+          newGroup.members.forEach((m) => (m.conversationId = convData.id));
+
+          const memberInserts = [creatorId, ...memberIds].map((uid) => ({
+            conversation_id: convData.id,
+            user_id: uid,
+          }));
+
+          const { error: membersError } = await supabase
+            .from("conversation_members")
+            .insert(memberInserts);
+
+          if (membersError) {
+            console.error("ChatService.createGroupConversation members error:", membersError);
+          }
+        }
+      } catch (err) {
+        console.error("ChatService.createGroupConversation exception:", err);
+      }
+    }
+
+    // 2. Local Storage persistence
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);

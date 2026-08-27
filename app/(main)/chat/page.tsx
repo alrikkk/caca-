@@ -5,12 +5,13 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { ChatService } from "@/services/chat-service";
+import { ProfileService } from "@/services/profile-service";
 import { Conversation, ChatMessage } from "@/types/chat";
+import { StudentProfile } from "@/types/user";
 import { MOCK_STUDENTS, CURRENT_USER } from "@/lib/mock-data";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { VoiceInputButton } from "@/components/ui/VoiceInputButton";
 import {
@@ -18,9 +19,7 @@ import {
   Plus,
   Users,
   MessageSquare,
-  Sparkles,
-  ArrowLeft,
-  CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +34,7 @@ function ChatPageContent() {
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [profilesMap, setProfilesMap] = useState<Record<string, StudentProfile>>({});
 
   // New Group Modal State
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -48,6 +48,18 @@ function ChatPageContent() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // Pre-seed profile lookup map with known mock students and active user
+  useEffect(() => {
+    const map: Record<string, StudentProfile> = {};
+    for (const s of MOCK_STUDENTS) {
+      map[s.id] = s;
+    }
+    if (profile) {
+      map[profile.id] = profile;
+    }
+    setProfilesMap(map);
+  }, [profile]);
 
   useEffect(() => {
     const initChat = async () => {
@@ -145,6 +157,24 @@ function ChatPageContent() {
 
   const activeConv = conversations.find((c) => c.id === activeConvId);
 
+  // Helper to resolve the other participant in a direct conversation
+  const getDirectParticipant = (conv?: Conversation) => {
+    if (!conv || conv.isGroup) return null;
+    const otherMember = conv.members.find((m) => m.userId !== activeUserId) || conv.members[0];
+    if (!otherMember) return null;
+    const resolved =
+      otherMember.user ||
+      profilesMap[otherMember.userId] ||
+      MOCK_STUDENTS.find((s) => s.id === otherMember.userId);
+    return {
+      id: otherMember.userId,
+      fullName: resolved?.fullName || conv.name || "Student",
+      avatarUrl: resolved?.avatarUrl,
+    };
+  };
+
+  const activeParticipant = getDirectParticipant(activeConv);
+
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-12 font-mono">
       {/* Header */}
@@ -182,8 +212,9 @@ function ChatPageContent() {
           <div className="flex-1 overflow-y-auto divide-y divide-ink/10">
             {conversations.map((conv) => {
               const isActive = conv.id === activeConvId;
-              const otherMember = conv.members.find((m) => m.userId !== activeUserId)?.user;
-              const title = conv.isGroup ? conv.name : otherMember?.fullName || conv.name || "Student";
+              const participant = getDirectParticipant(conv);
+              const title = conv.isGroup ? conv.name : participant?.fullName || conv.name || "Student";
+              const avatarSrc = conv.isGroup ? undefined : participant?.avatarUrl;
 
               return (
                 <button
@@ -199,13 +230,13 @@ function ChatPageContent() {
                 >
                   <Avatar
                     name={title || "Student"}
-                    src={conv.isGroup ? undefined : otherMember?.avatarUrl}
+                    src={avatarSrc}
                     size="sm"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <p className={cn("font-bold text-xs uppercase truncate", isActive ? "text-caca-lime" : "text-ink")}>
-                        {title}
+                        {title || "Student"}
                       </p>
                       {conv.isGroup && (
                         <span className={cn("text-[9px] px-1 border-hard-sm", isActive ? "bg-white/20 text-white" : "bg-canvas-subtle text-ink")}>
@@ -221,7 +252,7 @@ function ChatPageContent() {
               );
             })}
 
-            {conversations.length === 0 && (
+            {conversations.length === 0 && !loading && (
               <div className="p-6 text-center text-xs text-ink-muted space-y-2">
                 <p>No active conversations.</p>
                 <p className="text-[10px]">Start messaging candidates from the Discover page.</p>
@@ -234,24 +265,43 @@ function ChatPageContent() {
         <main className="md:col-span-2 flex flex-col bg-white">
           {activeConv ? (
             <>
-              {/* Thread Header */}
+              {/* Thread Header with Clickable Participant Profile Link */}
               <div className="p-3 border-b-2 border-ink bg-canvas-subtle flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Avatar
-                    name={activeConv.name || "Chat"}
-                    size="sm"
-                  />
-                  <div>
-                    <h2 className="font-black text-xs uppercase text-ink">
-                      {activeConv.name}
-                    </h2>
-                    <span className="text-[10px] text-ink-muted">
-                      {activeConv.isGroup
-                        ? `${activeConv.members.length} SQUAD MEMBERS`
-                        : "DIRECT CONVERSATION"}
-                    </span>
+                {activeConv.isGroup ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-caca-lime border-hard flex items-center justify-center font-bold text-ink">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h2 className="font-black text-xs uppercase text-ink">
+                        {activeConv.name}
+                      </h2>
+                      <span className="text-[10px] text-ink-muted">
+                        {activeConv.members.length} SQUAD MEMBERS
+                      </span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <Link
+                    href={activeParticipant?.id ? `/profile/${activeParticipant.id}` : "#"}
+                    className="flex items-center gap-2.5 hover:opacity-85 transition-opacity group"
+                  >
+                    <Avatar
+                      name={activeParticipant?.fullName || activeConv.name || "Student"}
+                      src={activeParticipant?.avatarUrl}
+                      size="sm"
+                    />
+                    <div>
+                      <h2 className="font-black text-xs uppercase text-ink group-hover:underline flex items-center gap-1">
+                        <span>{activeParticipant?.fullName || activeConv.name}</span>
+                        <ExternalLink className="w-3 h-3 text-ink-muted group-hover:text-ink" />
+                      </h2>
+                      <span className="text-[10px] text-ink-muted uppercase">
+                        DIRECT CONVERSATION • VIEW PROFILE
+                      </span>
+                    </div>
+                  </Link>
+                )}
 
                 {activeConv.isGroup && (
                   <Badge variant="lime" size="sm">
@@ -266,8 +316,10 @@ function ChatPageContent() {
                   <>
                     {messages.map((msg) => {
                       const isOwn = msg.senderId === activeUserId;
-                      const senderStudent = MOCK_STUDENTS.find((s) => s.id === msg.senderId);
-                      const senderName = isOwn ? "You" : senderStudent?.fullName || "Student";
+                      const sender =
+                        profilesMap[msg.senderId] ||
+                        MOCK_STUDENTS.find((s) => s.id === msg.senderId);
+                      const senderName = isOwn ? "You" : sender?.fullName || "Student";
 
                       return (
                         <div
@@ -277,9 +329,18 @@ function ChatPageContent() {
                             isOwn ? "ml-auto items-end" : "mr-auto items-start"
                           )}
                         >
-                          <span className="text-[10px] text-ink-muted uppercase font-bold mb-0.5">
-                            {senderName}
-                          </span>
+                          {isOwn ? (
+                            <span className="text-[10px] text-ink-muted uppercase font-bold mb-0.5">
+                              {senderName}
+                            </span>
+                          ) : (
+                            <Link
+                              href={`/profile/${msg.senderId}`}
+                              className="text-[10px] text-ink-muted hover:text-ink uppercase font-bold mb-0.5 hover:underline flex items-center gap-1"
+                            >
+                              <span>{senderName}</span>
+                            </Link>
+                          )}
                           <div
                             className={cn(
                               "p-2.5 border-hard leading-relaxed shadow-hard-sm",
@@ -373,20 +434,21 @@ function ChatPageContent() {
         title="CREATE SQUAD GROUP CHAT"
         className="max-w-md"
       >
-        <div className="space-y-4 font-mono text-xs">
-          <Input
-            label="GROUP NAME"
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-            placeholder="e.g. AI Vision Hackathon Squad 🚀"
-            required
-          />
+        <div className="space-y-4 text-xs font-mono">
+          <div className="space-y-1.5">
+            <label className="block font-bold uppercase text-ink">GROUP / SPRINT NAME</label>
+            <input
+              type="text"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              placeholder="e.g. EchoSpatial Sprint Hub"
+              className="w-full h-10 px-3 bg-white border-hard text-ink focus:outline-none"
+            />
+          </div>
 
           <div className="space-y-1.5">
-            <label className="block font-bold uppercase text-ink">
-              SELECT SQUAD MEMBERS
-            </label>
-            <div className="max-h-48 overflow-y-auto divide-y divide-ink/10 border-hard bg-canvas-subtle p-2 space-y-1">
+            <label className="block font-bold uppercase text-ink">SELECT MEMBERS ({selectedMemberIds.length})</label>
+            <div className="max-h-48 overflow-y-auto border-hard bg-canvas-subtle p-2 space-y-1 divide-y divide-ink/10">
               {MOCK_STUDENTS.filter((s) => s.id !== activeUserId).map((student) => {
                 const isSelected = selectedMemberIds.includes(student.id);
                 return (
@@ -395,24 +457,22 @@ function ChatPageContent() {
                     type="button"
                     onClick={() => {
                       setSelectedMemberIds((prev) =>
-                        isSelected
-                          ? prev.filter((id) => id !== student.id)
-                          : [...prev, student.id]
+                        isSelected ? prev.filter((id) => id !== student.id) : [...prev, student.id]
                       );
                     }}
                     className={cn(
-                      "w-full p-2 text-left flex items-center justify-between border-hard-sm transition-colors",
-                      isSelected ? "bg-caca-lime text-ink" : "bg-white text-ink hover:bg-canvas"
+                      "w-full p-2 flex items-center justify-between text-left transition-colors cursor-pointer",
+                      isSelected ? "bg-caca-lime text-ink font-bold" : "hover:bg-white text-ink"
                     )}
                   >
                     <div className="flex items-center gap-2">
                       <Avatar name={student.fullName} src={student.avatarUrl} size="sm" />
                       <div>
-                        <p className="font-bold text-xs">{student.fullName}</p>
+                        <p className="font-bold text-xs uppercase">{student.fullName}</p>
                         <p className="text-[10px] text-ink-muted">{student.major}</p>
                       </div>
                     </div>
-                    <span>{isSelected ? "✓" : "+"}</span>
+                    {isSelected && <span className="text-[10px] font-black">✓ ADDED</span>}
                   </button>
                 );
               })}
@@ -428,9 +488,9 @@ function ChatPageContent() {
               size="sm"
               onClick={handleCreateGroup}
               isLoading={creatingGroup}
-              disabled={!groupName.trim() || selectedMemberIds.length === 0}
+              disabled={!groupName.trim() || selectedMemberIds.length === 0 || creatingGroup}
             >
-              CREATE SQUAD CHAT
+              CREATE GROUP
             </Button>
           </div>
         </div>
@@ -443,10 +503,8 @@ export default function ChatPage() {
   return (
     <Suspense
       fallback={
-        <div className="p-10 border-hard bg-white shadow-hard text-center max-w-md mx-auto font-mono">
-          <p className="text-xs font-bold uppercase text-ink-muted">
-            LOADING SQUAD CHAT...
-          </p>
+        <div className="p-10 border-hard bg-white shadow-hard text-center max-w-md mx-auto font-mono text-xs font-bold uppercase">
+          LOADING SQUAD CHAT...
         </div>
       }
     >

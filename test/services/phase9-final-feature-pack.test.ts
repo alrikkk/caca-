@@ -120,6 +120,8 @@ describe("Phase 9 Final Feature Pack Service Suite", () => {
       const res = await ChatService.createDirectConversation("usr_01", "usr_03", true);
       expect(res.success).toBe(true);
       expect(res.conversation?.isGroup).toBe(false);
+      expect(res.conversation?.members.length).toBe(2);
+      expect(res.conversation?.members[0].conversationId).toBe(res.conversation?.id);
     });
 
     it("should create a group squad conversation", async () => {

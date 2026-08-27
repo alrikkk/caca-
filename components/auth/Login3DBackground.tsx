@@ -12,12 +12,13 @@ interface Point3D {
 
 // 3D Object Definition
 interface Object3D {
-  type: "cube" | "molecule" | "tetrahedron" | "surface" | "graph";
+  type: "cube" | "molecule" | "tetrahedron" | "surface" | "graph" | "organic_chem" | "math_graph";
   center: Point3D;
   vertices: Point3D[];
   edges: [number, number][];
   specialEdges?: [number, number][];
   specialVertices?: number[];
+  labels?: Array<{ vertexIndex: number; text: string }>;
   rotX: number;
   rotY: number;
   rotZ: number;
@@ -60,7 +61,149 @@ export const Login3DBackground: React.FC = () => {
     window.addEventListener("resize", handleResize);
 
     // ----------------------------------------------------
-    // Create 3D Objects in Peripheral Space
+    // 1. UPPER-LEFT: 3D Organic Chemistry Molecule (Fused Aromatic Rings + Branches)
+    // ----------------------------------------------------
+    const createOrganicChemistryMolecule = (cx: number, cy: number, scale: number): Object3D => {
+      const v: Point3D[] = [];
+      const e: [number, number][] = [];
+      const s = scale * 0.75;
+
+      // Ring 1 (6 carbons of left benzene ring)
+      v.push({ x: -s * 1.5, y: 0, z: -4 }); // 0
+      v.push({ x: -s * 1.0, y: -s * 0.86, z: 2 }); // 1
+      v.push({ x: 0, y: -s * 0.86, z: -2 }); // 2 (shared)
+      v.push({ x: s * 0.5, y: 0, z: 4 }); // 3 (shared bridge)
+      v.push({ x: 0, y: s * 0.86, z: -2 }); // 4 (shared)
+      v.push({ x: -s * 1.0, y: s * 0.86, z: 2 }); // 5
+
+      // Ring 1 edges
+      e.push([0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]);
+
+      // Ring 2 (fused right ring sharing vertices 2, 3, 4)
+      v.push({ x: s * 1.5, y: -s * 0.86, z: -3 }); // 6
+      v.push({ x: s * 2.0, y: 0, z: 3 }); // 7
+      v.push({ x: s * 1.5, y: s * 0.86, z: -3 }); // 8
+
+      // Ring 2 edges
+      e.push([2, 6], [6, 7], [7, 8], [8, 4]);
+
+      // Functional branch 1: Hydroxyl / Carbonyl group on left ring
+      v.push({ x: -s * 2.2, y: -s * 0.6, z: 8 }); // 9 (-OH / =O)
+      e.push([0, 9]);
+
+      // Functional branch 2: Methyl branch on right ring
+      v.push({ x: s * 2.7, y: s * 0.4, z: -6 }); // 10 (-CH3)
+      e.push([7, 10]);
+
+      // Functional branch 3: Nitrogen / Oxygen heteroatom top branch
+      v.push({ x: s * 0.75, y: -s * 1.6, z: 6 }); // 11
+      e.push([6, 11]);
+
+      // Special aromatic double bond indicators & functional highlights
+      const specialEdges: [number, number][] = [
+        [0, 1],
+        [2, 3],
+        [4, 5],
+        [6, 7],
+        [0, 9],
+      ];
+
+      const specialVertices = [0, 9, 10, 11]; // Functional highlight atoms
+
+      return {
+        type: "organic_chem",
+        center: { x: cx, y: cy, z: 0 },
+        vertices: v,
+        edges: e,
+        specialEdges,
+        specialVertices,
+        rotX: 0.35,
+        rotY: 0.5,
+        rotZ: 0.15,
+        rotSpeedX: 0.0015,
+        rotSpeedY: 0.003,
+        rotSpeedZ: 0.001,
+      };
+    };
+
+    // ----------------------------------------------------
+    // 2. UPPER-RIGHT: 3D Mathematical Coordinate Graph (XYZ Axes + Surface Mesh)
+    // ----------------------------------------------------
+    const createMathCoordinateGraph = (cx: number, cy: number, size: number): Object3D => {
+      const v: Point3D[] = [];
+      const e: [number, number][] = [];
+      const s = size * 0.85;
+
+      // 3D Coordinate Axes (X, Y, Z)
+      const originIdx = 0;
+      v.push({ x: 0, y: 0, z: 0 }); // 0: Origin
+
+      const xTip = 1;
+      v.push({ x: s * 1.35, y: 0, z: 0 }); // 1: +X axis
+      e.push([0, 1]);
+
+      const yTip = 2;
+      v.push({ x: 0, y: -s * 1.35, z: 0 }); // 2: +Y axis (up)
+      e.push([0, 2]);
+
+      const zTip = 3;
+      v.push({ x: 0, y: 0, z: s * 1.35 }); // 3: +Z axis (outward)
+      e.push([0, 3]);
+
+      // Mathematical Hyperbolic Paraboloid Surface: z = (x² - y²) / c
+      const steps = 4;
+      const stepSize = s / steps;
+      const baseSurfaceIdx = v.length;
+
+      for (let i = -steps; i <= steps; i++) {
+        for (let j = -steps; j <= steps; j++) {
+          const x = i * (stepSize * 0.7);
+          const y = j * (stepSize * 0.7);
+          // Hyperbolic saddle function
+          const z = ((i * i - j * j) / (steps * steps)) * (s * 0.5);
+          v.push({ x, y: y * 0.8, z });
+        }
+      }
+
+      const stride = steps * 2 + 1;
+      for (let i = 0; i <= steps * 2; i++) {
+        for (let j = 0; j <= steps * 2; j++) {
+          const curr = baseSurfaceIdx + i * stride + j;
+          if (j < steps * 2) e.push([curr, curr + 1]);
+          if (i < steps * 2) e.push([curr, curr + stride]);
+        }
+      }
+
+      const specialVertices = [xTip, yTip, zTip, originIdx];
+      const specialEdges: [number, number][] = [
+        [0, 1],
+        [0, 2],
+        [0, 3],
+      ];
+
+      return {
+        type: "math_graph",
+        center: { x: cx, y: cy, z: 0 },
+        vertices: v,
+        edges: e,
+        specialEdges,
+        specialVertices,
+        labels: [
+          { vertexIndex: 1, text: "X" },
+          { vertexIndex: 2, text: "Z" },
+          { vertexIndex: 3, text: "Y" },
+        ],
+        rotX: 0.65,
+        rotY: 0.8,
+        rotZ: 0.25,
+        rotSpeedX: 0.002,
+        rotSpeedY: 0.004,
+        rotSpeedZ: 0.001,
+      };
+    };
+
+    // ----------------------------------------------------
+    // Other Peripheral Objects (Preserved)
     // ----------------------------------------------------
     const createCube = (cx: number, cy: number, size: number): Object3D => {
       const s = size / 2;
@@ -127,7 +270,6 @@ export const Login3DBackground: React.FC = () => {
       const e: [number, number][] = [];
       const ringCount = 6;
 
-      // Hexagonal Benzene Ring
       for (let i = 0; i < ringCount; i++) {
         const theta = (i * 2 * Math.PI) / ringCount;
         v.push({
@@ -140,7 +282,6 @@ export const Login3DBackground: React.FC = () => {
         e.push([i, (i + 1) % ringCount]);
       }
 
-      // Outer functional group branches
       const branchRadius = radius * 1.55;
       for (let i = 0; i < 3; i++) {
         const idx = i * 2;
@@ -213,15 +354,15 @@ export const Login3DBackground: React.FC = () => {
 
       if (isMobile) {
         return [
-          createMolecule(w * 0.18, h * 0.16, 26),
-          createCube(w * 0.82, h * 0.18, 38),
+          createOrganicChemistryMolecule(w * 0.18, h * 0.16, 24),
+          createMathCoordinateGraph(w * 0.82, h * 0.18, 26),
         ];
       }
 
       if (isTablet) {
         return [
-          createMolecule(w * 0.16, h * 0.18, 36),
-          createCube(w * 0.84, h * 0.18, 48),
+          createOrganicChemistryMolecule(w * 0.16, h * 0.18, 32),
+          createMathCoordinateGraph(w * 0.84, h * 0.18, 34),
           createTetrahedron(w * 0.14, h * 0.82, 45),
           createParametricSurface(w * 0.84, h * 0.82, 60),
         ];
@@ -229,8 +370,8 @@ export const Login3DBackground: React.FC = () => {
 
       // Desktop full composition
       return [
-        createMolecule(w * 0.15, h * 0.16, 42),
-        createCube(w * 0.86, h * 0.18, 54),
+        createOrganicChemistryMolecule(w * 0.15, h * 0.17, 38), // UPPER-LEFT: 3D Organic Chemistry
+        createMathCoordinateGraph(w * 0.86, h * 0.17, 40), // UPPER-RIGHT: 3D Mathematical Coordinate Graph
         createTetrahedron(w * 0.12, h * 0.52, 48),
         createParametricSurface(w * 0.88, h * 0.56, 75),
         createMolecule(w * 0.16, h * 0.84, 38),
@@ -318,10 +459,10 @@ export const Login3DBackground: React.FC = () => {
 
           if (isSpecialEdge) {
             ctx.strokeStyle = "rgba(214, 248, 39, 0.9)";
-            ctx.lineWidth = 2;
+            ctx.lineWidth = obj.type === "math_graph" ? 2 : 2.2;
           } else {
-            ctx.strokeStyle = "rgba(13, 13, 13, 0.35)";
-            ctx.lineWidth = 1.2;
+            ctx.strokeStyle = obj.type === "math_graph" ? "rgba(13, 13, 13, 0.25)" : "rgba(13, 13, 13, 0.35)";
+            ctx.lineWidth = obj.type === "math_graph" ? 0.9 : 1.2;
           }
 
           ctx.beginPath();
@@ -330,11 +471,11 @@ export const Login3DBackground: React.FC = () => {
           ctx.stroke();
         }
 
-        // Draw object nodes / atoms
+        // Draw object nodes / atoms / axis points
         for (let vIdx = 0; vIdx < projected.length; vIdx++) {
           const p = projected[vIdx];
           const isSpecial = obj.specialVertices?.includes(vIdx);
-          const radius = Math.max(2, (isSpecial ? 5.5 : 3.2) * p.scale);
+          const radius = Math.max(1.8, (isSpecial ? 5.2 : (obj.type === "math_graph" ? 2.0 : 3.2)) * p.scale);
 
           if (isSpecial) {
             // Neon Lime Student Atom/Vertex with hard black border
@@ -345,12 +486,24 @@ export const Login3DBackground: React.FC = () => {
             ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
-          } else {
+          } else if (obj.type !== "math_graph") {
             // Ink Node
             ctx.fillStyle = "#0D0D0D";
             ctx.beginPath();
             ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
             ctx.fill();
+          }
+        }
+
+        // Draw coordinate labels if present (X, Y, Z)
+        if (obj.labels) {
+          ctx.font = "bold 9px monospace";
+          ctx.fillStyle = "#0D0D0D";
+          for (const label of obj.labels) {
+            const p = projected[label.vertexIndex];
+            if (p) {
+              ctx.fillText(label.text, p.px + 4, p.py - 4);
+            }
           }
         }
       }
@@ -383,33 +536,31 @@ export const Login3DBackground: React.FC = () => {
       {/* Surrounding Floating Academic, Math & Student Project Badges */}
       {/* ============================================================ */}
 
-      {/* TOP-LEFT: Formula & Idea Tag */}
+      {/* 1. TOP-LEFT: 3D Organic Chemistry Molecule Tag (Replaces black-circled element) */}
       <div className="absolute top-6 left-6 sm:top-10 sm:left-12 space-y-1.5 opacity-90 hidden sm:block animate-float-slow">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
-          <span className="text-caca-blue font-black">∫</span>
-          <span>E = mc²</span>
-          <span className="text-ink-muted">•</span>
-          <span className="font-serif italic lowercase text-xs">a² + b² = c²</span>
+          <span className="bg-caca-lime text-ink px-1 border-hard-sm text-[9px] font-black">
+            CHEM
+          </span>
+          <span>C₁₀H₈ // FUSED AROMATIC RING</span>
         </div>
         <p className="text-[10px] text-ink-muted uppercase font-bold pl-0.5">
-          [MATH] → VECTOR_SPACES // TENSOR_FIELDS
+          [SYNTHESIS] → SP² HYBRIDIZATION // π-ORBITALS
         </p>
       </div>
 
-      {/* TOP-RIGHT: Physics & Innovation Sprint */}
+      {/* 2. TOP-RIGHT: 3D Mathematical Coordinate Graph Tag (Replaces red-circled element) */}
       <div className="absolute top-6 right-6 sm:top-10 sm:right-12 text-right space-y-1.5 opacity-90 hidden sm:block animate-float-delayed">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
-          <span className="bg-caca-lime text-ink px-1 border-hard-sm text-[9px] font-black">
-            BUILD
-          </span>
-          <span>HACKATHON_V2 // SHIP_STAGE</span>
+          <span className="text-caca-blue font-black">f(x,y)</span>
+          <span>z = x² - y² // 3D MANIFOLD</span>
         </div>
         <p className="text-[10px] text-ink-muted uppercase font-bold pr-0.5">
-          ∇ × B = μ₀J + μ₀ε₀(∂E/∂t)
+          [CALCULUS] → ∇f(x,y) = [2x, -2y]ᵀ // SADDLE POINT
         </p>
       </div>
 
-      {/* LEFT (Beside Login Card): Matrix & Squad Synergy Graph */}
+      {/* LEFT (Beside Login Card): Matrix & Squad Synergy Graph (UNCHANGED) */}
       <div className="absolute left-6 lg:left-14 top-1/2 -translate-y-1/2 space-y-3 hidden lg:block animate-float-slow">
         {/* Linear Algebra Matrix Card */}
         <div className="p-3 bg-white border-hard shadow-hard-sm space-y-1 max-w-[200px]">
@@ -433,7 +584,7 @@ export const Login3DBackground: React.FC = () => {
         </div>
       </div>
 
-      {/* RIGHT (Beside Login Card): Terminal / Code Snippet */}
+      {/* RIGHT (Beside Login Card): Terminal / Code Snippet (UNCHANGED) */}
       <div className="absolute right-6 lg:right-14 top-1/2 -translate-y-1/2 space-y-3 hidden lg:block animate-float-delayed">
         {/* Mini Software Snippet */}
         <div className="p-3 bg-white border-hard shadow-hard-sm space-y-1.5 max-w-[220px]">
@@ -467,7 +618,7 @@ export const Login3DBackground: React.FC = () => {
         </div>
       </div>
 
-      {/* BOTTOM-LEFT: Calculus & Autonomous Systems */}
+      {/* BOTTOM-LEFT: Calculus & Autonomous Systems (UNCHANGED) */}
       <div className="absolute bottom-6 left-6 sm:bottom-10 sm:left-12 space-y-1.5 opacity-90 hidden sm:block animate-float-delayed">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
           <span className="text-caca-coral font-black">∇</span>
@@ -478,7 +629,7 @@ export const Login3DBackground: React.FC = () => {
         </p>
       </div>
 
-      {/* BOTTOM-RIGHT: Verification & Production Ship */}
+      {/* BOTTOM-RIGHT: Verification & Production Ship (UNCHANGED) */}
       <div className="absolute bottom-6 right-6 sm:bottom-10 sm:right-12 text-right space-y-1.5 opacity-90 hidden sm:block animate-float-slow">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border-hard shadow-hard-sm text-[11px] font-bold uppercase text-ink">
           <span className="text-caca-green font-black">✓</span>

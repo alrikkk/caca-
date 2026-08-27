@@ -308,6 +308,119 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['notifications']['Insert']>;
       };
+      conversations: {
+        Row: {
+          id: string;
+          name: string | null;
+          is_group: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name?: string | null;
+          is_group?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['conversations']['Insert']>;
+      };
+      conversation_members: {
+        Row: {
+          conversation_id: string;
+          user_id: string;
+          joined_at: string;
+        };
+        Insert: {
+          conversation_id: string;
+          user_id: string;
+          joined_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['conversation_members']['Insert']>;
+      };
+      messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          sender_id: string;
+          content: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          sender_id: string;
+          content: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['messages']['Insert']>;
+      };
+      follows: {
+        Row: {
+          follower_id: string;
+          following_id: string;
+          created_at: string;
+        };
+        Insert: {
+          follower_id: string;
+          following_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['follows']['Insert']>;
+      };
+      clips: {
+        Row: {
+          id: string;
+          creator_id: string;
+          project_id: string | null;
+          video_url: string;
+          thumbnail_url: string | null;
+          caption: string;
+          tags: string[];
+          likes_count: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          creator_id: string;
+          project_id?: string | null;
+          video_url: string;
+          thumbnail_url?: string | null;
+          caption: string;
+          tags?: string[];
+          likes_count?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['clips']['Insert']>;
+      };
+      clip_likes: {
+        Row: {
+          clip_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          clip_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['clip_likes']['Insert']>;
+      };
+      project_bookmarks: {
+        Row: {
+          user_id: string;
+          project_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          project_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['project_bookmarks']['Insert']>;
+      };
     };
   };
 }

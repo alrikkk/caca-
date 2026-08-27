@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { NotificationService, NotificationRecord } from "@/services/notification-service";
 import { useAuth } from "@/lib/auth-context";
-import { Bell, Check, Users, MessageSquare, ExternalLink } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
+import { Bell, Check, Users, MessageSquare, ExternalLink, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const NotificationBell: React.FC = () => {
@@ -13,40 +14,14 @@ export const NotificationBell: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const userId = user?.id || profile?.id;
+  const userId = user?.id || profile?.id || (isDemoMode ? "usr_curr_01" : undefined);
 
   const loadNotifications = useCallback(async () => {
-    if (isDemoMode) {
-      setNotifications([
-        {
-          id: "notif_demo_1",
-          userId: "demo",
-          title: "EchoSpatial Squad",
-          message: "Maya accepted your invitation to join EchoSpatial Core Squad!",
-          type: "application_status",
-          link: "/teams",
-          read: false,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "notif_demo_2",
-          userId: "demo",
-          title: "New Match Alert",
-          message: "BioFlow matched 96% with your skills in React & PyTorch.",
-          type: "info",
-          link: "/feed",
-          read: true,
-          createdAt: new Date(Date.now() - 3600000).toISOString(),
-        },
-      ]);
-      return;
-    }
-
     if (userId) {
       const list = await NotificationService.getNotifications(userId);
       setNotifications(list);
     }
-  }, [userId, isDemoMode]);
+  }, [userId]);
 
   useEffect(() => {
     loadNotifications();
@@ -77,12 +52,24 @@ export const NotificationBell: React.FC = () => {
   };
 
   const handleMarkAllRead = async () => {
-    for (const n of notifications) {
-      if (!n.read) {
-        await NotificationService.markAsRead(n.id);
-      }
+    if (userId) {
+      await NotificationService.markAllAsRead(userId);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     }
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  const getNotificationIcon = (type: NotificationRecord["type"]) => {
+    switch (type) {
+      case "invitation":
+        return <Users className="w-3.5 h-3.5 text-ink shrink-0" />;
+      case "follow":
+      case "connect":
+        return <UserPlus className="w-3.5 h-3.5 text-caca-blue shrink-0" />;
+      case "message":
+        return <MessageSquare className="w-3.5 h-3.5 text-ink shrink-0" />;
+      default:
+        return <Bell className="w-3.5 h-3.5 text-ink shrink-0" />;
+    }
   };
 
   return (
@@ -120,7 +107,7 @@ export const NotificationBell: React.FC = () => {
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}
-                className="text-[10px] text-ink-muted hover:text-ink uppercase font-bold underline"
+                className="text-[10px] text-ink-muted hover:text-ink uppercase font-bold underline cursor-pointer"
               >
                 MARK ALL READ
               </button>
@@ -128,7 +115,7 @@ export const NotificationBell: React.FC = () => {
           </div>
 
           {/* List */}
-          <div className="max-h-72 overflow-y-auto divide-y divide-ink/10">
+          <div className="max-h-80 overflow-y-auto divide-y divide-ink/10">
             {notifications.length > 0 ? (
               notifications.map((notif) => (
                 <div
@@ -138,39 +125,57 @@ export const NotificationBell: React.FC = () => {
                     !notif.read ? "bg-caca-lime/10" : "hover:bg-canvas-subtle"
                   )}
                 >
-                  <div className="space-y-1 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      {notif.type === "invitation" ? (
-                        <Users className="w-3 h-3 text-ink shrink-0" />
-                      ) : (
-                        <MessageSquare className="w-3 h-3 text-ink shrink-0" />
-                      )}
-                      <span className="font-black uppercase text-ink text-[11px]">
-                        {notif.title}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-ink leading-snug font-sans">
-                      {notif.message}
-                    </p>
-                    {notif.link && (
+                  <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                    {notif.actorAvatarUrl || notif.actorName ? (
                       <Link
-                        href={notif.link}
+                        href={notif.actorId ? `/profile/${notif.actorId}` : "#"}
                         onClick={() => {
                           handleMarkAsRead(notif.id);
-                          setIsOpen(false);
+                          if (notif.actorId) setIsOpen(false);
                         }}
-                        className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-ink underline uppercase pt-0.5 hover:text-caca-coral"
+                        className="shrink-0 hover:opacity-85 transition-opacity"
                       >
-                        <span>VIEW DETAILS</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
+                        <Avatar
+                          name={notif.actorName || "Student"}
+                          src={notif.actorAvatarUrl}
+                          size="sm"
+                        />
                       </Link>
+                    ) : (
+                      <div className="w-7 h-7 bg-canvas-subtle border-hard-sm flex items-center justify-center shrink-0">
+                        {getNotificationIcon(notif.type)}
+                      </div>
                     )}
+
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black uppercase text-ink text-[11px] truncate">
+                          {notif.title}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-ink leading-snug font-sans">
+                        {notif.message}
+                      </p>
+                      {notif.link && (
+                        <Link
+                          href={notif.link}
+                          onClick={() => {
+                            handleMarkAsRead(notif.id);
+                            setIsOpen(false);
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-ink underline uppercase pt-0.5 hover:text-caca-coral"
+                        >
+                          <span>VIEW DETAILS</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </Link>
+                      )}
+                    </div>
                   </div>
 
                   {!notif.read && (
                     <button
                       onClick={() => handleMarkAsRead(notif.id)}
-                      className="p-1 hover:bg-white border-hard-sm text-ink shrink-0"
+                      className="p-1 hover:bg-white border-hard-sm text-ink shrink-0 cursor-pointer"
                       title="Mark as read"
                     >
                       <Check className="w-2.5 h-2.5" />
