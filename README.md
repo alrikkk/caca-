@@ -1,3 +1,4 @@
+*Written by hand 
 # Caca
 
 Caca helps college students find projects and teammates based on verified skills, interests, schedule availability, and working styles.
