@@ -2,6 +2,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { MOCK_PROJECTS } from "@/lib/mock-data";
 
 const LOCAL_TEAMS_KEY = "caca_user_teams";
+const LOCAL_STORAGE_DEMO_KEY = "caca_is_demo_mode";
 
 function toProjectUuid(id: string): string {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
@@ -69,7 +70,20 @@ interface TeamMemberQueryResult {
 
 export class TeamService {
   /**
-   * Creates a new team for a project with the creator as the lead member
+   * Helper to check if Demo Mode is active
+   */
+  private static checkIsDemo(): boolean {
+    if (typeof window !== "undefined") {
+      return (
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true")
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Creates a new squad/team for a project with verified idempotency and lead assignment
    */
   static async createTeam(params: {
     projectId: string;
@@ -78,22 +92,27 @@ export class TeamService {
     creatorId: string;
     roleTitle?: string;
     compatibilityScore?: number;
-  }): Promise<{ success: boolean; team?: TeamRecord; error?: string }> {
-    if (!params.teamName.trim()) {
+  }): Promise<{ success: boolean; team?: TeamRecord; error?: string; isExisting?: boolean }> {
+    const cleanTeamName = params.teamName.trim();
+    if (!cleanTeamName) {
       return { success: false, error: "Team name is required." };
+    }
+
+    if (!params.projectId || !params.creatorId) {
+      return { success: false, error: "Missing project ID or creator ID." };
     }
 
     const proj = MOCK_PROJECTS.find((p) => p.id === params.projectId);
     const projectName = params.projectName || proj?.title || "Project Squad";
     const teamId = `team_${Date.now()}`;
-    const roleTitle = params.roleTitle || "Squad Lead";
+    const roleTitle = params.roleTitle?.trim() || "Squad Lead";
     const compatibilityScore = params.compatibilityScore ?? 92;
 
     const newTeam: TeamRecord = {
       id: teamId,
       projectId: params.projectId,
       projectName,
-      name: params.teamName.trim(),
+      name: cleanTeamName,
       role: roleTitle,
       isLead: true,
       membersCount: 1,
@@ -102,17 +121,90 @@ export class TeamService {
       createdAt: new Date().toISOString(),
     };
 
-    // Insert into Supabase
-    if (isSupabaseConfigured()) {
+    // Check local storage for existing squad on this project (Idempotency)
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(LOCAL_TEAMS_KEY);
+        if (stored) {
+          const list: TeamRecord[] = JSON.parse(stored);
+          const existingLocal = list.find((t) => t.projectId === params.projectId);
+          if (existingLocal) {
+            return {
+              success: true,
+              team: existingLocal,
+              isExisting: true,
+            };
+          }
+        }
+      } catch (err) {
+        console.error("TeamService.createTeam (local check) error:", err);
+      }
+    }
+
+    const isDemo = this.checkIsDemo();
+
+    // 1. Supabase Persistence with strict Idempotency Checks
+    if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
         const uuid = toProjectUuid(params.projectId);
+        const teamsTable = supabase.from("teams") as any;
 
+        // Pre-check: Check if a team/squad already exists for this project if select supported
+        if (typeof teamsTable.select === "function") {
+          try {
+            const { data: existingTeam } = await teamsTable
+              .select(`
+                id,
+                name,
+                project_id,
+                team_compatibility_score,
+                created_at,
+                team_members (
+                  id,
+                  user_id,
+                  role_title,
+                  is_lead
+                )
+              `)
+              .eq("project_id", uuid)
+              .maybeSingle();
+
+            if (existingTeam) {
+              const members = (existingTeam.team_members as any[]) || [];
+              const userMember = members.find((m) => m.user_id === params.creatorId);
+              const isUserLead = Boolean(userMember?.is_lead);
+
+              const existingTeamRecord: TeamRecord = {
+                id: existingTeam.id,
+                projectId: params.projectId,
+                projectName,
+                name: existingTeam.name,
+                role: userMember?.role_title || (isUserLead ? "Squad Lead" : "Member"),
+                isLead: isUserLead,
+                membersCount: members.length || 1,
+                maxMembers: proj?.maxTeamSize || 4,
+                compatibilityScore: Number(existingTeam.team_compatibility_score || 90),
+                createdAt: existingTeam.created_at,
+              };
+
+              return {
+                success: true,
+                team: existingTeamRecord,
+                isExisting: true,
+              };
+            }
+          } catch {
+            // Ignore pre-check failure and proceed to insert
+          }
+        }
+
+        // Insert new team
         const { data: teamData, error: teamError } = await supabase
           .from("teams")
           .insert({
             project_id: uuid,
-            name: newTeam.name,
+            name: cleanTeamName,
             team_compatibility_score: compatibilityScore,
           })
           .select("id")
@@ -120,11 +212,24 @@ export class TeamService {
 
         if (teamError) {
           console.error("TeamService.createTeam insert error:", teamError);
-          return { success: false, error: teamError.message || "Failed to create team in database." };
+          if (
+            teamError.message?.includes("teams_project_id_key") ||
+            teamError.message?.includes("duplicate key") ||
+            (teamError as any).code === "23505"
+          ) {
+            return {
+              success: false,
+              error: "SQUAD ALREADY EXISTS. A squad has already been established for this project.",
+              isExisting: true,
+            };
+          }
+          return { success: false, error: "Couldn't create the squad — please try again." };
         }
 
         if (teamData?.id) {
           newTeam.id = teamData.id;
+
+          // Insert team creator into team_members as lead
           const { error: memberError } = await supabase.from("team_members").insert({
             team_id: teamData.id,
             user_id: params.creatorId,
@@ -134,23 +239,22 @@ export class TeamService {
 
           if (memberError) {
             console.error("TeamService.createTeam member insert error:", memberError);
-            return { success: false, error: memberError.message || "Failed to add user to team." };
+            return { success: false, error: "Squad created, but failed to assign lead membership." };
           }
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         console.error("TeamService.createTeam exception:", err);
-        return { success: false, error: msg || "Failed to create squad." };
+        return { success: false, error: "Couldn't create the squad — please try again." };
       }
     }
 
-    // Save in local storage cache
+    // 2. Save in local storage cache
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(LOCAL_TEAMS_KEY);
         let list: TeamRecord[] = stored ? JSON.parse(stored) : [];
-        if (!list.some((t) => t.projectId === params.projectId && t.name === newTeam.name)) {
-          list.push(newTeam);
+        if (!list.some((t) => t.id === newTeam.id || t.projectId === params.projectId)) {
+          list.unshift(newTeam);
           localStorage.setItem(LOCAL_TEAMS_KEY, JSON.stringify(list));
         }
       } catch (err) {
@@ -180,7 +284,7 @@ export class TeamService {
       }
     }
 
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !this.checkIsDemo()) {
       try {
         const supabase = createClient();
         const { data: memberRows, error } = await supabase
@@ -247,10 +351,10 @@ export class TeamService {
     roleTitle?: string;
     isLead?: boolean;
   }): Promise<{ success: boolean; error?: string }> {
-    const roleTitle = params.roleTitle || "Squad Member";
+    const roleTitle = params.roleTitle?.trim() || "Squad Member";
     const isLead = Boolean(params.isLead);
 
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !this.checkIsDemo()) {
       try {
         const supabase = createClient();
         const { error } = await supabase.from("team_members").insert({
@@ -262,12 +366,11 @@ export class TeamService {
 
         if (error) {
           console.error("TeamService.addMemberToTeam DB error:", error);
-          return { success: false, error: error.message };
+          return { success: false, error: "Could not add member to squad." };
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         console.error("TeamService.addMemberToTeam exception:", err);
-        return { success: false, error: msg };
+        return { success: false, error: "Failed to add member to team." };
       }
     }
 
@@ -287,7 +390,7 @@ export class TeamService {
       return { success: false, error: "Role title cannot be empty." };
     }
 
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !this.checkIsDemo()) {
       try {
         const supabase = createClient();
 
@@ -312,12 +415,11 @@ export class TeamService {
 
         if (updateError) {
           console.error("TeamService.updateMemberRole DB error:", updateError);
-          return { success: false, error: updateError.message };
+          return { success: false, error: "Could not update member role." };
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         console.error("TeamService.updateMemberRole exception:", err);
-        return { success: false, error: msg };
+        return { success: false, error: "Failed to update role." };
       }
     }
 
@@ -332,7 +434,7 @@ export class TeamService {
     userId: string;
     requesterId: string;
   }): Promise<{ success: boolean; error?: string }> {
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !this.checkIsDemo()) {
       try {
         const supabase = createClient();
 
@@ -358,12 +460,11 @@ export class TeamService {
 
         if (deleteError) {
           console.error("TeamService.removeMemberFromTeam DB error:", deleteError);
-          return { success: false, error: deleteError.message };
+          return { success: false, error: "Could not remove member from squad." };
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         console.error("TeamService.removeMemberFromTeam exception:", err);
-        return { success: false, error: msg };
+        return { success: false, error: "Failed to remove member." };
       }
     }
 
@@ -392,7 +493,7 @@ export class TeamService {
     }
 
     // 2. Supabase DB Deletion
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !this.checkIsDemo()) {
       try {
         const supabase = createClient();
 
@@ -415,11 +516,11 @@ export class TeamService {
           .eq("id", params.teamId);
 
         if (delError) {
-          return { success: false, error: delError.message };
+          return { success: false, error: "Could not delete squad." };
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { success: false, error: msg };
+        console.error("deleteTeam exception:", err);
+        return { success: false, error: "Failed to delete squad." };
       }
     }
 

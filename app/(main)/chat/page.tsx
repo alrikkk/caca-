@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { ChatService } from "@/services/chat-service";
+import { ProfileService } from "@/services/profile-service";
 import { Conversation, ChatMessage } from "@/types/chat";
 import { StudentProfile } from "@/types/user";
 import { MOCK_STUDENTS, CURRENT_USER } from "@/lib/mock-data";
@@ -68,8 +69,34 @@ function ChatPageContent() {
   useEffect(() => {
     const initChat = async () => {
       setLoading(true);
-      const list = await ChatService.getConversations(activeUserId);
+      const list = await ChatService.getConversations(activeUserId, isDemoMode);
       setConversations(list);
+
+      // Hydrate profiles map for any member user IDs
+      const missingUserIds = new Set<string>();
+      const initialKnownMap: Record<string, StudentProfile> = {};
+
+      list.forEach((c) => {
+        c.members.forEach((m) => {
+          if (m.userId) {
+            if (m.user) {
+              initialKnownMap[m.userId] = m.user;
+            } else {
+              missingUserIds.add(m.userId);
+            }
+          }
+        });
+      });
+
+      if (missingUserIds.size > 0) {
+        await Promise.all(
+          Array.from(missingUserIds).map(async (uid) => {
+            const p = await ProfileService.getProfileById(uid);
+            if (p) initialKnownMap[uid] = p;
+          })
+        );
+      }
+      setProfilesMap((prev) => ({ ...prev, ...initialKnownMap }));
 
       if (recipientId && recipientId !== activeUserId) {
         // Direct conversation with recipient requested
@@ -101,6 +128,22 @@ function ChatPageContent() {
       const loadMsgs = async () => {
         const msgs = await ChatService.getMessages(activeConvId);
         setMessages(msgs);
+
+        // Ensure all sender profiles in messages are resolved
+        setProfilesMap((prev) => {
+          const missingSenders = msgs.filter((m) => !prev[m.senderId]);
+          if (missingSenders.length > 0) {
+            Promise.all(
+              missingSenders.map(async (m) => {
+                const p = await ProfileService.getProfileById(m.senderId);
+                if (p) {
+                  setProfilesMap((curr) => ({ ...curr, [m.senderId]: p }));
+                }
+              })
+            );
+          }
+          return prev;
+        });
       };
       loadMsgs();
     }
@@ -186,10 +229,19 @@ function ChatPageContent() {
       otherMember.user ||
       profilesMap[otherMember.userId] ||
       MOCK_STUDENTS.find((s) => s.id === otherMember.userId);
+
+    const fallbackName =
+      conv.name && conv.name !== "Direct Conversation" && conv.name !== "Student"
+        ? conv.name
+        : "Student";
+
     return {
       id: otherMember.userId,
-      fullName: resolved?.fullName || conv.name || "Student",
+      fullName: resolved?.fullName || fallbackName,
       avatarUrl: resolved?.avatarUrl,
+      major: resolved?.major,
+      college: resolved?.college,
+      headline: resolved?.headline,
     };
   };
 
@@ -317,7 +369,7 @@ function ChatPageContent() {
                         <ExternalLink className="w-3 h-3 text-ink-muted group-hover:text-ink" />
                       </h2>
                       <span className="text-[10px] text-ink-muted uppercase">
-                        DIRECT CONVERSATION • VIEW PROFILE
+                        {activeParticipant?.major ? `${activeParticipant.major} • VIEW PROFILE` : "DIRECT CONVERSATION • VIEW PROFILE"}
                       </span>
                     </div>
                   </Link>

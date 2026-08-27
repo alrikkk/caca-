@@ -5,86 +5,173 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 const LOCAL_CONVERSATIONS_KEY = "caca_user_conversations";
 const LOCAL_MESSAGES_PREFIX = "caca_chat_msgs_";
+const LOCAL_HIDDEN_CONVS_PREFIX = "caca_hidden_convs_";
+const LOCAL_STORAGE_DEMO_KEY = "caca_is_demo_mode";
 
 export class ChatService {
   /**
-   * Get all active conversations for the specified user with resolved participant identities
+   * Helper to check if running in Demo Mode
    */
-  static async getConversations(userId: string): Promise<Conversation[]> {
-    let localConvs: Conversation[] = [];
+  private static checkIsDemo(isDemoParam?: boolean): boolean {
+    if (typeof isDemoParam === "boolean") return isDemoParam;
+    if (typeof window !== "undefined") {
+      return (
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true")
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Get all active conversations for the specified user with resolved real participant identities
+   */
+  static async getConversations(userId: string, isDemoMode?: boolean): Promise<Conversation[]> {
+    if (!userId) return [];
+
+    const isDemo = this.checkIsDemo(isDemoMode);
+
+    // 1. Get user-specific hidden/deleted conversation IDs
+    const hiddenIds = new Set<string>();
+    if (typeof window !== "undefined") {
+      try {
+        const storedHidden = localStorage.getItem(`${LOCAL_HIDDEN_CONVS_PREFIX}${userId}`);
+        if (storedHidden) {
+          (JSON.parse(storedHidden) as string[]).forEach((id) => hiddenIds.add(id));
+        }
+      } catch (err) {
+        console.error("ChatService.getConversations hidden parsing error:", err);
+      }
+    }
+
+    const combinedMap = new Map<string, Conversation>();
+
+    // 2. In Demo Mode, unconfigured offline, or mock user IDs, seed with matching mock conversations
+    if (isDemo || !isSupabaseConfigured() || userId.startsWith("usr_")) {
+      for (const c of MOCK_CONVERSATIONS) {
+        const isMember = c.members.some(
+          (m) =>
+            m.userId === userId ||
+            (userId === "usr_01" && m.userId === "usr_curr_01") ||
+            (userId === "usr_curr_01" && m.userId === "usr_01")
+        );
+        if (isMember && !hiddenIds.has(c.id)) {
+          combinedMap.set(c.id, c);
+        }
+      }
+    }
+
+    // 3. Load locally cached conversations where this user is a member
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
         if (stored) {
-          localConvs = JSON.parse(stored);
+          const list: Conversation[] = JSON.parse(stored);
+          list.forEach((c) => {
+            if (
+              !hiddenIds.has(c.id) &&
+              c.members.some(
+                (m) =>
+                  m.userId === userId ||
+                  (userId === "usr_01" && m.userId === "usr_curr_01") ||
+                  (userId === "usr_curr_01" && m.userId === "usr_01")
+              )
+            ) {
+              combinedMap.set(c.id, c);
+            }
+          });
         }
       } catch (err) {
-        localConvs = [];
+        console.error("ChatService.getConversations local parse error:", err);
       }
     }
 
-    // Merge mock conversations and locally created ones
-    const combinedMap = new Map<string, Conversation>();
-    for (const c of MOCK_CONVERSATIONS) {
-      combinedMap.set(c.id, c);
-    }
-    for (const c of localConvs) {
-      combinedMap.set(c.id, c);
-    }
-
-    // Supabase remote conversations
-    if (isSupabaseConfigured()) {
+    // 4. Supabase Remote Conversations with Real Profiles Join
+    if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
+
+        // Query conversation memberships where current user is not hidden
         const { data: memberRows, error } = await supabase
           .from("conversation_members")
-          .select("conversation_id, conversations(*)")
+          .select("conversation_id, is_hidden, conversations(*)")
           .eq("user_id", userId);
 
         if (error) {
           console.error("ChatService.getConversations query error:", error);
-        } else if (memberRows) {
-          for (const row of memberRows) {
-            const conv = row.conversations;
-            if (conv && !combinedMap.has(conv.id)) {
+        } else if (memberRows && memberRows.length > 0) {
+          // Filter out rows marked is_hidden = true
+          const activeMemberRows = memberRows.filter(
+            (r: any) => !r.is_hidden && !hiddenIds.has(r.conversation_id)
+          );
+
+          for (const row of activeMemberRows) {
+            const conv = (row as any).conversations;
+            if (conv && !hiddenIds.has(conv.id)) {
+              // Fetch all members of this conversation
               const { data: allMembers, error: membersErr } = await supabase
                 .from("conversation_members")
-                .select("user_id, joined_at, profiles(*)")
+                .select("user_id, joined_at, is_hidden")
                 .eq("conversation_id", conv.id);
 
               if (membersErr) {
                 console.error("ChatService.getConversations members query error:", membersErr);
               }
 
-              const members: ConversationMember[] = (allMembers || []).map((m: any) => ({
-                conversationId: conv.id,
-                userId: m.user_id,
-                user: m.profiles
+              const memberList = (allMembers || []).filter((m: any) => !m.is_hidden);
+              const memberUserIds = memberList.map((m: any) => m.user_id);
+
+              // Bulk fetch real student profiles for all members
+              let profilesMap = new Map<string, any>();
+              if (memberUserIds.length > 0) {
+                const { data: profilesData } = await supabase
+                  .from("profiles")
+                  .select("id, full_name, avatar_url, college, major, headline, experience_level, working_style")
+                  .in("id", memberUserIds);
+
+                if (profilesData) {
+                  profilesData.forEach((p) => profilesMap.set(p.id, p));
+                }
+              }
+
+              // Construct populated members with real profile details
+              const members: ConversationMember[] = memberList.map((m: any) => {
+                const realProf = profilesMap.get(m.user_id);
+                const mockMatch = MOCK_STUDENTS.find((s) => s.id === m.user_id);
+
+                const userObj: StudentProfile | undefined = realProf
                   ? {
-                      id: m.profiles.id,
-                      email: m.profiles.email || `${m.user_id}@campus.edu`,
-                      fullName: m.profiles.full_name || "Student",
-                      college: m.profiles.college || "Campus University",
-                      major: m.profiles.major || "Computer Science",
-                      gradYear: m.profiles.grad_year || 2026,
-                      experienceLevel: (m.profiles.experience_level as any) || "junior",
-                      workingStyle: (m.profiles.working_style as any) || "collaborative",
-                      headline: m.profiles.headline || undefined,
-                      avatarUrl: m.profiles.avatar_url || undefined,
-                      skills: m.profiles.skills || [],
+                      id: realProf.id,
+                      email: "",
+                      fullName: realProf.full_name || "Student",
+                      college: realProf.college || "Campus University",
+                      major: realProf.major || "General Studies",
+                      gradYear: 2026,
+                      experienceLevel: realProf.experience_level || "junior",
+                      workingStyle: realProf.working_style || "collaborative",
+                      headline: realProf.headline || undefined,
+                      avatarUrl: realProf.avatar_url || undefined,
+                      skills: [],
                       interests: [],
                       availability: {
                         hoursPerWeek: 10,
-                        timezone: "EST",
+                        timezone: "UTC",
                         prefersRemote: true,
                         weekendAvailability: true,
                         weekdayEvenings: true,
                       },
                     }
-                  : MOCK_STUDENTS.find((s) => s.id === m.user_id),
-                joinedAt: m.joined_at,
-              }));
+                  : mockMatch;
 
+                return {
+                  conversationId: conv.id,
+                  userId: m.user_id,
+                  user: userObj,
+                  joinedAt: m.joined_at,
+                };
+              });
+
+              // Query last message in conversation
               const { data: lastMsgData } = await supabase
                 .from("messages")
                 .select("*")
@@ -93,9 +180,18 @@ export class ChatService {
                 .limit(1)
                 .maybeSingle();
 
+              // Derive appropriate title: For 1-on-1, other participant's real name
+              let convTitle = conv.name;
+              if (!conv.is_group) {
+                const other = members.find((m) => m.userId !== userId) || members[0];
+                if (other?.user?.fullName) {
+                  convTitle = other.user.fullName;
+                }
+              }
+
               combinedMap.set(conv.id, {
                 id: conv.id,
-                name: conv.name || undefined,
+                name: convTitle || (conv.is_group ? "Squad Group" : "Direct Conversation"),
                 isGroup: Boolean(conv.is_group),
                 members,
                 lastMessage: lastMsgData
@@ -115,10 +211,11 @@ export class ChatService {
           }
         }
       } catch (err) {
-        console.error("ChatService.getConversations exception:", err);
+        console.error("ChatService.getConversations database error:", err);
       }
     }
 
+    // 5. Final resolution and sorting
     const populated = Array.from(combinedMap.values()).map((c) => {
       const updatedMembers = c.members.map((m) => {
         if (!m.user) {
@@ -128,7 +225,6 @@ export class ChatService {
         return m;
       });
 
-      // For 1-on-1 direct conversations, name should be the other participant
       let convName = c.name;
       if (!c.isGroup) {
         const otherMember = updatedMembers.find((m) => m.userId !== userId) || updatedMembers[0];
@@ -142,7 +238,7 @@ export class ChatService {
 
       return {
         ...c,
-        name: convName,
+        name: convName || (c.isGroup ? "Squad Group" : "Direct Conversation"),
         members: updatedMembers,
       };
     });
@@ -217,13 +313,15 @@ export class ChatService {
     conversationId: string,
     senderId: string,
     content: string,
-    isDemo: boolean = false
+    isDemoMode?: boolean
   ): Promise<{ success: boolean; message?: ChatMessage; error?: string }> {
     const text = content.trim();
     if (!text) return { success: false, error: "Message cannot be empty." };
 
+    const isDemo = this.checkIsDemo(isDemoMode);
+
     const newMsg: ChatMessage = {
-      id: `msg_${Date.now()}`,
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       conversationId,
       senderId,
       content: text,
@@ -263,9 +361,9 @@ export class ChatService {
         const list: ChatMessage[] = stored ? JSON.parse(stored) : [];
         localStorage.setItem(key, JSON.stringify([...list, newMsg]));
 
-        // Update lastMessage on conversation
+        // Update lastMessage on conversation in local cache
         const convStored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
-        const convList: Conversation[] = convStored ? JSON.parse(convStored) : [...MOCK_CONVERSATIONS];
+        const convList: Conversation[] = convStored ? JSON.parse(convStored) : [];
         const updated = convList.map((c) =>
           c.id === conversationId
             ? { ...c, lastMessage: newMsg, updatedAt: newMsg.createdAt }
@@ -286,16 +384,24 @@ export class ChatService {
   static async createDirectConversation(
     userId: string,
     targetUserId: string,
-    isDemo: boolean = false
+    isDemoMode?: boolean
   ): Promise<{ success: boolean; conversation?: Conversation; error?: string }> {
+    if (!userId || !targetUserId) {
+      return { success: false, error: "Missing user IDs for conversation." };
+    }
+
     if (userId === targetUserId) {
       return { success: false, error: "Cannot create conversation with yourself." };
     }
 
-    const all = await this.getConversations(userId);
+    const isDemo = this.checkIsDemo(isDemoMode);
+
+    // Check if an active direct conversation already exists between BOTH users
+    const all = await this.getConversations(userId, isDemo);
     const existing = all.find(
       (c) =>
         !c.isGroup &&
+        c.members.some((m) => m.userId === userId) &&
         c.members.some((m) => m.userId === targetUserId)
     );
 
@@ -303,40 +409,69 @@ export class ChatService {
       return { success: true, conversation: existing };
     }
 
-    const targetStudent = MOCK_STUDENTS.find((s) => s.id === targetUserId);
+    let targetProfile: StudentProfile | undefined = MOCK_STUDENTS.find((s) => s.id === targetUserId);
+    let userProfile: StudentProfile | undefined = MOCK_STUDENTS.find((s) => s.id === userId);
+
     let convId = `conv_${Date.now()}`;
 
-    const newConv: Conversation = {
-      id: convId,
-      name: targetStudent?.fullName || "Student",
-      isGroup: false,
-      members: [
-        {
-          conversationId: convId,
-          userId,
-          user: MOCK_STUDENTS.find((s) => s.id === userId),
-          joinedAt: new Date().toISOString(),
-        },
-        {
-          conversationId: convId,
-          userId: targetUserId,
-          user: targetStudent,
-          joinedAt: new Date().toISOString(),
-        },
-      ],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      unreadCount: 0,
-    };
-
-    // 1. Supabase persistence
+    // 1. Supabase persistence for Real Users
     if (!isDemo && isSupabaseConfigured()) {
       try {
         const supabase = createClient();
+
+        // Fetch real profiles of both users
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url, major, college, headline")
+          .in("id", [userId, targetUserId]);
+
+        if (profs) {
+          const tp = profs.find((p) => p.id === targetUserId);
+          const up = profs.find((p) => p.id === userId);
+
+          if (tp) {
+            targetProfile = {
+              id: tp.id,
+              email: "",
+              fullName: tp.full_name || "Student",
+              college: tp.college || "Campus University",
+              major: tp.major || "General Studies",
+              gradYear: 2026,
+              experienceLevel: "junior",
+              workingStyle: "collaborative",
+              headline: tp.headline || undefined,
+              avatarUrl: tp.avatar_url || undefined,
+              skills: [],
+              interests: [],
+              availability: { hoursPerWeek: 10, timezone: "UTC", prefersRemote: true, weekendAvailability: true, weekdayEvenings: true },
+            };
+          }
+
+          if (up) {
+            userProfile = {
+              id: up.id,
+              email: "",
+              fullName: up.full_name || "Student",
+              college: up.college || "Campus University",
+              major: up.major || "General Studies",
+              gradYear: 2026,
+              experienceLevel: "junior",
+              workingStyle: "collaborative",
+              headline: up.headline || undefined,
+              avatarUrl: up.avatar_url || undefined,
+              skills: [],
+              interests: [],
+              availability: { hoursPerWeek: 10, timezone: "UTC", prefersRemote: true, weekendAvailability: true, weekdayEvenings: true },
+            };
+          }
+        }
+
+        const directConvName = targetProfile?.fullName || "Direct Conversation";
+
         const { data: convData, error: convError } = await supabase
           .from("conversations")
           .insert({
-            name: targetStudent?.fullName || "Direct Conversation",
+            name: directConvName,
             is_group: false,
             created_by: userId,
           })
@@ -347,23 +482,6 @@ export class ChatService {
           console.error("ChatService.createDirectConversation insert error:", convError);
         } else if (convData?.id) {
           convId = convData.id;
-          newConv.id = convData.id;
-          newConv.createdAt = convData.created_at || newConv.createdAt;
-          newConv.updatedAt = convData.updated_at || newConv.updatedAt;
-          newConv.members = [
-            {
-              conversationId: convData.id,
-              userId,
-              user: MOCK_STUDENTS.find((s) => s.id === userId),
-              joinedAt: new Date().toISOString(),
-            },
-            {
-              conversationId: convData.id,
-              userId: targetUserId,
-              user: targetStudent,
-              joinedAt: new Date().toISOString(),
-            },
-          ];
 
           const { error: membersError } = await supabase
             .from("conversation_members")
@@ -381,12 +499,37 @@ export class ChatService {
       }
     }
 
+    const newConv: Conversation = {
+      id: convId,
+      name: targetProfile?.fullName || "Direct Conversation",
+      isGroup: false,
+      members: [
+        {
+          conversationId: convId,
+          userId,
+          user: userProfile,
+          joinedAt: new Date().toISOString(),
+        },
+        {
+          conversationId: convId,
+          userId: targetUserId,
+          user: targetProfile,
+          joinedAt: new Date().toISOString(),
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      unreadCount: 0,
+    };
+
     // 2. Local Storage persistence
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
-        const list: Conversation[] = stored ? JSON.parse(stored) : [...MOCK_CONVERSATIONS];
-        localStorage.setItem(LOCAL_CONVERSATIONS_KEY, JSON.stringify([newConv, ...list]));
+        const list: Conversation[] = stored ? JSON.parse(stored) : [];
+        if (!list.some((c) => c.id === newConv.id)) {
+          localStorage.setItem(LOCAL_CONVERSATIONS_KEY, JSON.stringify([newConv, ...list]));
+        }
       } catch (err) {
         console.warn("Could not save new conversation locally:", err);
       }
@@ -402,9 +545,11 @@ export class ChatService {
     creatorId: string,
     name: string,
     memberIds: string[],
-    isDemo: boolean = false
+    isDemoMode?: boolean
   ): Promise<{ success: boolean; conversation?: Conversation; error?: string }> {
+    const isDemo = this.checkIsDemo(isDemoMode);
     let convId = `conv_grp_${Date.now()}`;
+
     const allMembers: ConversationMember[] = [
       {
         conversationId: convId,
@@ -475,7 +620,7 @@ export class ChatService {
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
-        const list: Conversation[] = stored ? JSON.parse(stored) : [...MOCK_CONVERSATIONS];
+        const list: Conversation[] = stored ? JSON.parse(stored) : [];
         localStorage.setItem(LOCAL_CONVERSATIONS_KEY, JSON.stringify([newGroup, ...list]));
       } catch (err) {
         console.warn("Could not save new group conversation locally:", err);
@@ -486,61 +631,63 @@ export class ChatService {
   }
 
   /**
-   * Delete or leave a conversation
-   * For conversations created by the user or 1-to-1 direct chats, deletes the conversation.
-   * For group chats where the user is a member, removes the user membership without destroying the group for others.
+   * Delete / Hide a conversation per user.
+   * Ensures User A deleting the chat removes it from User A's view while User B retains access.
    */
   static async deleteConversation(
     conversationId: string,
     userId: string,
-    isDemo: boolean = false
+    isDemoMode?: boolean
   ): Promise<{ success: boolean; error?: string }> {
     if (!conversationId || !userId) {
       return { success: false, error: "Missing conversation ID or user ID." };
     }
 
-    // 1. Supabase deletion
+    const isDemo = this.checkIsDemo(isDemoMode);
+
+    // 1. Supabase: Mark conversation_members as is_hidden = true for this user
     if (!isDemo && isSupabaseConfigured()) {
       try {
         const supabase = createClient();
 
-        // First attempt to delete conversation if current user is creator
-        const { error: convDeleteError } = await supabase
-          .from("conversations")
-          .delete()
-          .eq("id", conversationId)
-          .eq("created_by", userId);
+        // Mark user's membership row as hidden
+        const { error: hideError } = await supabase
+          .from("conversation_members")
+          .update({
+            is_hidden: true,
+            deleted_at: new Date().toISOString(),
+          } as any)
+          .eq("conversation_id", conversationId)
+          .eq("user_id", userId);
 
-        if (convDeleteError) {
-          // If not creator or RLS prevents deleting entire group, remove user from conversation members
-          const { error: memberDeleteError } = await supabase
+        if (hideError) {
+          console.warn("Could not update is_hidden, falling back to delete membership:", hideError);
+          // Fallback to removing membership row
+          await supabase
             .from("conversation_members")
             .delete()
             .eq("conversation_id", conversationId)
             .eq("user_id", userId);
-
-          if (memberDeleteError) {
-            console.error("ChatService.deleteConversation membership error:", memberDeleteError);
-            return { success: false, error: memberDeleteError.message || "Failed to delete conversation." };
-          }
         }
       } catch (err) {
-        console.error("ChatService.deleteConversation exception:", err);
+        console.error("ChatService.deleteConversation database error:", err);
       }
     }
 
-    // 2. Local Storage cache update
+    // 2. Local Storage cache update (Record in user's hidden conversations list)
     if (typeof window !== "undefined") {
       try {
-        const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
-        if (stored) {
-          const list: Conversation[] = JSON.parse(stored);
-          const updated = list.filter((c) => c.id !== conversationId);
-          localStorage.setItem(LOCAL_CONVERSATIONS_KEY, JSON.stringify(updated));
+        const hiddenKey = `${LOCAL_HIDDEN_CONVS_PREFIX}${userId}`;
+        const storedHidden = localStorage.getItem(hiddenKey);
+        const hiddenList: string[] = storedHidden ? JSON.parse(storedHidden) : [];
+        if (!hiddenList.includes(conversationId)) {
+          hiddenList.push(conversationId);
+          localStorage.setItem(hiddenKey, JSON.stringify(hiddenList));
         }
+
         localStorage.removeItem(`${LOCAL_MESSAGES_PREFIX}${conversationId}`);
       } catch (err) {
-        console.warn("Could not remove conversation locally:", err);
+        console.warn("Could not update local storage on delete:", err);
       }
     }
 

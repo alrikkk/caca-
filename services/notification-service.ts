@@ -19,12 +19,27 @@ export interface NotificationRecord {
 type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
 
 const LOCAL_NOTIFS_KEY = "caca_user_notifications";
+const LOCAL_STORAGE_DEMO_KEY = "caca_is_demo_mode";
 
 export class NotificationService {
   /**
-   * Get initial mock notifications scoped strictly by recipient user ID
+   * Helper to check if Demo Mode is active
    */
-  private static getInitialUserNotifications(userId: string): NotificationRecord[] {
+  private static checkIsDemo(isDemoParam?: boolean): boolean {
+    if (typeof isDemoParam === "boolean") return isDemoParam;
+    if (typeof window !== "undefined") {
+      return (
+        localStorage.getItem(LOCAL_STORAGE_DEMO_KEY) === "true" &&
+        document.cookie.includes("caca_demo_mode=true")
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Get initial mock notifications scoped strictly by recipient user ID for Demo Mode
+   */
+  static getInitialDemoNotifications(userId: string): NotificationRecord[] {
     if (userId === "usr_curr_01" || userId === "demo") {
       return [
         {
@@ -106,12 +121,15 @@ export class NotificationService {
   }
 
   /**
-   * Fetch all in-app notifications strictly filtered by recipient_id
+   * Fetch all in-app notifications strictly filtered by recipient user ID
    */
-  static async getNotifications(userId?: string): Promise<NotificationRecord[]> {
+  static async getNotifications(userId?: string, isDemoMode?: boolean): Promise<NotificationRecord[]> {
     if (!userId) return [];
 
+    const isDemo = this.checkIsDemo(isDemoMode);
     let localNotifs: NotificationRecord[] = [];
+
+    // 1. Local Storage Cache retrieval filtered by userId
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(LOCAL_NOTIFS_KEY);
       if (stored) {
@@ -119,7 +137,7 @@ export class NotificationService {
           const all: NotificationRecord[] = JSON.parse(stored);
           localNotifs = all.filter((n) => n.userId === userId);
           if (localNotifs.length === 0) {
-            const initial = this.getInitialUserNotifications(userId);
+            const initial = this.getInitialDemoNotifications(userId);
             if (initial.length > 0) {
               localNotifs = initial;
               localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify([...all, ...initial]));
@@ -130,20 +148,20 @@ export class NotificationService {
           localNotifs = [];
         }
       } else {
-        // Initialize scoped mock notifications for all default users
         const allInitial = [
-          ...this.getInitialUserNotifications("usr_curr_01"),
-          ...this.getInitialUserNotifications("usr_02"),
-          ...this.getInitialUserNotifications("usr_03"),
+          ...this.getInitialDemoNotifications("usr_curr_01"),
+          ...this.getInitialDemoNotifications("usr_02"),
+          ...this.getInitialDemoNotifications("usr_03"),
         ];
         localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(allInitial));
         localNotifs = allInitial.filter((n) => n.userId === userId);
       }
     } else {
-      localNotifs = this.getInitialUserNotifications(userId);
+      localNotifs = this.getInitialDemoNotifications(userId);
     }
 
-    if (isSupabaseConfigured()) {
+    // 2. Supabase DB fetch for Real Authenticated Users
+    if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
         const { data, error } = await supabase
@@ -151,21 +169,49 @@ export class NotificationService {
           .select("*")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
-          .limit(20);
+          .limit(30);
 
         if (error) {
           console.error("NotificationService.getNotifications query error:", error);
-        } else if (data) {
-          const dbNotifs: NotificationRecord[] = (data as NotificationRow[]).map((n) => ({
-            id: n.id,
-            userId: n.user_id,
-            title: n.title,
-            message: n.message,
-            type: (n.type as NotificationRecord["type"]) || "info",
-            link: n.link || undefined,
-            read: Boolean(n.read),
-            createdAt: n.created_at,
-          }));
+        } else if (data && data.length > 0) {
+          // Identify any actor IDs to resolve profile info
+          const actorIds = new Set<string>();
+          data.forEach((n: any) => {
+            const meta = n.metadata || {};
+            if (meta.actor_id) actorIds.add(meta.actor_id);
+          });
+
+          let actorProfilesMap = new Map<string, any>();
+          if (actorIds.size > 0) {
+            const { data: profs } = await supabase
+              .from("profiles")
+              .select("id, full_name, avatar_url")
+              .in("id", Array.from(actorIds));
+
+            if (profs) {
+              profs.forEach((p) => actorProfilesMap.set(p.id, p));
+            }
+          }
+
+          const dbNotifs: NotificationRecord[] = (data as any[]).map((n) => {
+            const meta = n.metadata || {};
+            const resolvedActor = meta.actor_id ? actorProfilesMap.get(meta.actor_id) : null;
+            const mockActor = meta.actor_id ? MOCK_STUDENTS.find((s) => s.id === meta.actor_id) : null;
+
+            return {
+              id: n.id,
+              userId: n.user_id,
+              actorId: meta.actor_id,
+              actorName: resolvedActor?.full_name || meta.actor_name || mockActor?.fullName,
+              actorAvatarUrl: resolvedActor?.avatar_url || meta.actor_avatar_url || mockActor?.avatarUrl,
+              title: n.title,
+              message: n.message,
+              type: (n.type as NotificationRecord["type"]) || "info",
+              link: n.link || undefined,
+              read: Boolean(n.read),
+              createdAt: n.created_at,
+            };
+          });
 
           const dbIds = new Set(dbNotifs.map((n) => n.id));
           const remainingLocal = localNotifs.filter((n) => !dbIds.has(n.id));
@@ -191,7 +237,12 @@ export class NotificationService {
     message: string;
     type?: "invitation" | "application_status" | "follow" | "connect" | "message" | "info";
     link?: string;
+    isDemoMode?: boolean;
   }): Promise<void> {
+    if (!params.userId) return;
+
+    const isDemo = this.checkIsDemo(params.isDemoMode);
+
     // Resolve actor details if actorId provided and name/avatar missing
     let actorName = params.actorName;
     let actorAvatarUrl = params.actorAvatarUrl;
@@ -218,15 +269,20 @@ export class NotificationService {
       createdAt: new Date().toISOString(),
     };
 
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !isDemo) {
       try {
         const supabase = createClient();
         const { error } = await supabase.from("notifications").insert({
           user_id: params.userId,
           title: params.title,
           message: params.message,
-          type: params.type || "info",
+          type: (params.type || "info") as any,
           link: params.link || null,
+          metadata: {
+            actor_id: params.actorId || null,
+            actor_name: actorName || null,
+            actor_avatar_url: actorAvatarUrl || null,
+          },
           read: false,
         });
 
@@ -251,21 +307,9 @@ export class NotificationService {
   }
 
   /**
-   * Mark notification as read
+   * Mark a single notification as read
    */
   static async markAsRead(notificationId: string): Promise<void> {
-    if (isSupabaseConfigured()) {
-      try {
-        const supabase = createClient();
-        await supabase
-          .from("notifications")
-          .update({ read: true })
-          .eq("id", notificationId);
-      } catch (err) {
-        console.error("NotificationService.markAsRead exception:", err);
-      }
-    }
-
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(LOCAL_NOTIFS_KEY);
       if (stored) {
@@ -280,15 +324,40 @@ export class NotificationService {
         }
       }
     }
+
+    if (isSupabaseConfigured() && !this.checkIsDemo()) {
+      try {
+        const supabase = createClient();
+        await supabase
+          .from("notifications")
+          .update({ read: true })
+          .eq("id", notificationId);
+      } catch (err) {
+        console.error("NotificationService.markAsRead exception:", err);
+      }
+    }
   }
 
   /**
-   * Mark all notifications for a specific user as read
+   * Mark all notifications as read for a user
    */
-  static async markAllAsRead(userId?: string): Promise<void> {
-    if (!userId) return;
+  static async markAllAsRead(userId: string): Promise<void> {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LOCAL_NOTIFS_KEY);
+      if (stored) {
+        try {
+          const list: NotificationRecord[] = JSON.parse(stored);
+          const updated = list.map((n) =>
+            n.userId === userId ? { ...n, read: true } : n
+          );
+          localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(updated));
+        } catch (err) {
+          console.error("NotificationService.markAllAsRead (local update) failed:", err);
+        }
+      }
+    }
 
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !this.checkIsDemo()) {
       try {
         const supabase = createClient();
         await supabase
@@ -297,22 +366,6 @@ export class NotificationService {
           .eq("user_id", userId);
       } catch (err) {
         console.error("NotificationService.markAllAsRead exception:", err);
-      }
-    }
-
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(LOCAL_NOTIFS_KEY);
-      if (stored) {
-        try {
-          const list: NotificationRecord[] = JSON.parse(stored);
-          // ONLY mark notifications belonging to this specific user as read
-          const updated = list.map((n) =>
-            n.userId === userId ? { ...n, read: true } : n
-          );
-          localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(updated));
-        } catch (err) {
-          console.error("NotificationService.markAllAsRead (local update) failed:", err);
-        }
       }
     }
   }
