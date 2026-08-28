@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { ChatService } from "@/services/chat-service";
 import { ProfileService } from "@/services/profile-service";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { Conversation, ChatMessage } from "@/types/chat";
 import { StudentProfile } from "@/types/user";
 import { MOCK_STUDENTS, CURRENT_USER } from "@/lib/mock-data";
@@ -21,6 +22,7 @@ import {
   MessageSquare,
   ExternalLink,
   Trash2,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +37,7 @@ function ChatPageContent() {
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [profilesMap, setProfilesMap] = useState<Record<string, StudentProfile>>({});
 
   // New Group Modal State
@@ -99,7 +102,7 @@ function ChatPageContent() {
       setProfilesMap((prev) => ({ ...prev, ...initialKnownMap }));
 
       if (recipientId && recipientId !== activeUserId) {
-        // Direct conversation with recipient requested
+        // Direct conversation with recipient requested (strictly deduplicated)
         const res = await ChatService.createDirectConversation(activeUserId, recipientId, isDemoMode);
         if (res.conversation) {
           setActiveConvId(res.conversation.id);
@@ -123,31 +126,119 @@ function ChatPageContent() {
     initChat();
   }, [activeUserId, recipientId, isDemoMode]);
 
+  // Realtime Subscription & Message Polling for Active Conversation
   useEffect(() => {
-    if (activeConvId) {
-      const loadMsgs = async () => {
-        const msgs = await ChatService.getMessages(activeConvId);
-        setMessages(msgs);
+    if (!activeConvId) return;
 
-        // Ensure all sender profiles in messages are resolved
-        setProfilesMap((prev) => {
-          const missingSenders = msgs.filter((m) => !prev[m.senderId]);
-          if (missingSenders.length > 0) {
-            Promise.all(
-              missingSenders.map(async (m) => {
-                const p = await ProfileService.getProfileById(m.senderId);
-                if (p) {
-                  setProfilesMap((curr) => ({ ...curr, [m.senderId]: p }));
+    let isMounted = true;
+
+    const loadMsgs = async () => {
+      const msgs = await ChatService.getMessages(activeConvId);
+      if (!isMounted) return;
+      setMessages(msgs);
+
+      // Ensure all sender profiles in messages are resolved
+      setProfilesMap((prev) => {
+        const missingSenders = msgs.filter((m) => !prev[m.senderId]);
+        if (missingSenders.length > 0) {
+          Promise.all(
+            missingSenders.map(async (m) => {
+              const p = await ProfileService.getProfileById(m.senderId);
+              if (p && isMounted) {
+                setProfilesMap((curr) => ({ ...curr, [m.senderId]: p }));
+              }
+            })
+          );
+        }
+        return prev;
+      });
+    };
+
+    loadMsgs();
+
+    // 1. Supabase Realtime Channel
+    let realtimeChannel: any = null;
+    if (!isDemoMode && isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        realtimeChannel = supabase
+          .channel(`chat_room_${activeConvId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "messages",
+              filter: `conversation_id=eq.${activeConvId}`,
+            },
+            async (payload: any) => {
+              const newRow = payload.new;
+              if (newRow && newRow.conversation_id === activeConvId && isMounted) {
+                const incoming: ChatMessage = {
+                  id: newRow.id,
+                  conversationId: newRow.conversation_id,
+                  senderId: newRow.sender_id,
+                  content: newRow.content,
+                  createdAt: newRow.created_at,
+                };
+
+                setMessages((prev) => {
+                  if (prev.some((m) => m.id === incoming.id)) return prev;
+                  return [...prev, incoming];
+                });
+
+                setConversations((prev) =>
+                  prev.map((c) =>
+                    c.id === activeConvId
+                      ? { ...c, lastMessage: incoming, updatedAt: incoming.createdAt }
+                      : c
+                  )
+                );
+
+                const senderProfile = await ProfileService.getProfileById(incoming.senderId);
+                if (senderProfile && isMounted) {
+                  setProfilesMap((curr) => ({ ...curr, [incoming.senderId]: senderProfile }));
                 }
-              })
-            );
-          }
-          return prev;
-        });
-      };
-      loadMsgs();
+              }
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn("Could not establish Realtime subscription:", err);
+      }
     }
-  }, [activeConvId]);
+
+    // 2. Periodic sync polling fallback (every 3.5s)
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        ChatService.getMessages(activeConvId).then((latestMsgs) => {
+          if (!isMounted) return;
+          setMessages((prev) => {
+            if (
+              latestMsgs.length !== prev.length ||
+              (latestMsgs.length > 0 &&
+                prev.length > 0 &&
+                latestMsgs[latestMsgs.length - 1].id !== prev[prev.length - 1].id)
+            ) {
+              return latestMsgs;
+            }
+            return prev;
+          });
+        });
+      }
+    }, 3500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+      if (realtimeChannel && isSupabaseConfigured()) {
+        try {
+          const supabase = createClient();
+          supabase.removeChannel(realtimeChannel);
+        } catch {}
+      }
+    };
+  }, [activeConvId, isDemoMode]);
 
   useEffect(() => {
     scrollToBottom();
@@ -158,6 +249,7 @@ function ChatPageContent() {
     if (!inputText.trim() || !activeConvId || isSending) return;
 
     const text = inputText.trim();
+    setSendError(null);
     setInputText("");
     setIsSending(true);
 
@@ -165,7 +257,10 @@ function ChatPageContent() {
     setIsSending(false);
 
     if (res.success && res.message) {
-      setMessages((prev) => [...prev, res.message!]);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === res.message!.id)) return prev;
+        return [...prev, res.message!];
+      });
       setConversations((prev) =>
         prev.map((c) =>
           c.id === activeConvId
@@ -173,6 +268,10 @@ function ChatPageContent() {
             : c
         )
       );
+    } else {
+      // Restore input text so user does not lose message
+      setInputText(text);
+      setSendError(res.error || "Couldn't send message — please try again.");
     }
   };
 
@@ -292,7 +391,10 @@ function ChatPageContent() {
                 <button
                   key={conv.id}
                   type="button"
-                  onClick={() => setActiveConvId(conv.id)}
+                  onClick={() => {
+                    setActiveConvId(conv.id);
+                    setSendError(null);
+                  }}
                   className={cn(
                     "w-full p-3 text-left transition-colors flex items-start gap-2.5",
                     isActive
@@ -462,6 +564,14 @@ function ChatPageContent() {
                 )}
               </div>
 
+              {/* Error Banner if sending failed */}
+              {sendError && (
+                <div className="px-4 py-2 bg-red-50 border-t border-red-500 flex items-center gap-2 text-red-600 text-[11px] font-bold uppercase">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{sendError}</span>
+                </div>
+              )}
+
               {/* Composer */}
               <form
                 onSubmit={handleSendMessage}
@@ -470,7 +580,10 @@ function ChatPageContent() {
                 <input
                   type="text"
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
+                  onChange={(e) => {
+                    setInputText(e.target.value);
+                    if (sendError) setSendError(null);
+                  }}
                   placeholder="Type message or click mic to dictate..."
                   className="flex-1 h-10 px-3 bg-white border-hard font-mono text-xs text-ink focus:outline-none focus:bg-canvas-subtle"
                 />

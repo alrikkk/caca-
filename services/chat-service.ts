@@ -307,7 +307,7 @@ export class ChatService {
   }
 
   /**
-   * Send a chat message
+   * Send a chat message with verified Supabase persistence and real error propagation
    */
   static async sendMessage(
     conversationId: string,
@@ -328,7 +328,7 @@ export class ChatService {
       createdAt: new Date().toISOString(),
     };
 
-    // 1. Supabase persistence
+    // 1. Supabase Persistence for Real Users
     if (!isDemo && isSupabaseConfigured()) {
       try {
         const supabase = createClient();
@@ -339,27 +339,52 @@ export class ChatService {
             sender_id: senderId,
             content: text,
           })
-          .select("id, created_at")
+          .select("id, conversation_id, sender_id, content, created_at")
           .maybeSingle();
 
         if (error) {
-          console.error("ChatService.sendMessage insert error:", error);
-        } else if (data?.id) {
-          newMsg.id = data.id;
-          if (data.created_at) newMsg.createdAt = data.created_at;
+          console.error("ChatService.sendMessage Supabase insert error:", {
+            message: error.message,
+            code: (error as any).code,
+            details: (error as any).details,
+            hint: (error as any).hint,
+            conversationId,
+            senderId,
+          });
+          return {
+            success: false,
+            error: "Couldn't send message — please try again.",
+          };
         }
+
+        if (!data?.id) {
+          console.error("ChatService.sendMessage: No message row returned after insert");
+          return {
+            success: false,
+            error: "Database did not confirm message delivery.",
+          };
+        }
+
+        newMsg.id = data.id;
+        newMsg.createdAt = data.created_at || newMsg.createdAt;
       } catch (err) {
-        console.error("ChatService.sendMessage exception:", err);
+        console.error("ChatService.sendMessage unhandled exception:", err);
+        return {
+          success: false,
+          error: "Network error sending message. Please try again.",
+        };
       }
     }
 
-    // 2. Local Storage persistence
+    // 2. Local Storage cache update ONLY upon verified success
     if (typeof window !== "undefined") {
       try {
         const key = `${LOCAL_MESSAGES_PREFIX}${conversationId}`;
         const stored = localStorage.getItem(key);
         const list: ChatMessage[] = stored ? JSON.parse(stored) : [];
-        localStorage.setItem(key, JSON.stringify([...list, newMsg]));
+        if (!list.some((m) => m.id === newMsg.id)) {
+          localStorage.setItem(key, JSON.stringify([...list, newMsg]));
+        }
 
         // Update lastMessage on conversation in local cache
         const convStored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
@@ -379,7 +404,8 @@ export class ChatService {
   }
 
   /**
-   * Create or find a 1-to-1 direct conversation with another student
+   * Create or find a 1-to-1 direct conversation with another student.
+   * Strictly verifies that User A and User B share the exact same conversation ID.
    */
   static async createDirectConversation(
     userId: string,
@@ -396,17 +422,17 @@ export class ChatService {
 
     const isDemo = this.checkIsDemo(isDemoMode);
 
-    // Check if an active direct conversation already exists between BOTH users
+    // 1. Check local/memory active conversations first
     const all = await this.getConversations(userId, isDemo);
-    const existing = all.find(
+    const existingLocal = all.find(
       (c) =>
         !c.isGroup &&
         c.members.some((m) => m.userId === userId) &&
         c.members.some((m) => m.userId === targetUserId)
     );
 
-    if (existing) {
-      return { success: true, conversation: existing };
+    if (existingLocal) {
+      return { success: true, conversation: existingLocal };
     }
 
     let targetProfile: StudentProfile | undefined = MOCK_STUDENTS.find((s) => s.id === targetUserId);
@@ -414,12 +440,66 @@ export class ChatService {
 
     let convId = `conv_${Date.now()}`;
 
-    // 1. Supabase persistence for Real Users
+    // 2. Supabase Check & Persistence for Real Users
     if (!isDemo && isSupabaseConfigured()) {
       try {
         const supabase = createClient();
 
-        // Fetch real profiles of both users
+        // 2a. First, check Supabase directly if a 1-to-1 conversation already exists between BOTH users
+        const { data: userMemberships, error: userMembErr } = await supabase
+          .from("conversation_members")
+          .select("conversation_id, conversations!inner(id, is_group, name, created_at, updated_at)")
+          .eq("user_id", userId)
+          .eq("conversations.is_group", false);
+
+        if (!userMembErr && userMemberships && userMemberships.length > 0) {
+          const candidateConvIds = userMemberships.map((r: any) => r.conversation_id);
+
+          const { data: matchedTarget, error: matchedErr } = await supabase
+            .from("conversation_members")
+            .select("conversation_id, conversations(*)")
+            .in("conversation_id", candidateConvIds)
+            .eq("user_id", targetUserId)
+            .limit(1)
+            .maybeSingle();
+
+          if (!matchedErr && matchedTarget?.conversation_id) {
+            const existingDbConv = (matchedTarget as any).conversations;
+            const fullConvs = await this.getConversations(userId, isDemo);
+            const found = fullConvs.find((c) => c.id === existingDbConv?.id || c.id === matchedTarget.conversation_id);
+            if (found) {
+              return { success: true, conversation: found };
+            }
+
+            return {
+              success: true,
+              conversation: {
+                id: matchedTarget.conversation_id,
+                name: existingDbConv?.name || targetProfile?.fullName || "Direct Conversation",
+                isGroup: false,
+                members: [
+                  {
+                    conversationId: matchedTarget.conversation_id,
+                    userId,
+                    user: userProfile,
+                    joinedAt: new Date().toISOString(),
+                  },
+                  {
+                    conversationId: matchedTarget.conversation_id,
+                    userId: targetUserId,
+                    user: targetProfile,
+                    joinedAt: new Date().toISOString(),
+                  },
+                ],
+                createdAt: existingDbConv?.created_at || new Date().toISOString(),
+                updatedAt: existingDbConv?.updated_at || new Date().toISOString(),
+                unreadCount: 0,
+              },
+            };
+          }
+        }
+
+        // 2b. Fetch real profiles of both users for title & member records
         const { data: profs } = await supabase
           .from("profiles")
           .select("id, full_name, avatar_url, major, college, headline")
@@ -468,6 +548,7 @@ export class ChatService {
 
         const directConvName = targetProfile?.fullName || "Direct Conversation";
 
+        // 2c. Create the conversation record in Supabase
         const { data: convData, error: convError } = await supabase
           .from("conversations")
           .insert({
@@ -480,22 +561,30 @@ export class ChatService {
 
         if (convError) {
           console.error("ChatService.createDirectConversation insert error:", convError);
-        } else if (convData?.id) {
-          convId = convData.id;
+          return { success: false, error: "Failed to initialize conversation in database." };
+        }
 
-          const { error: membersError } = await supabase
-            .from("conversation_members")
-            .insert([
-              { conversation_id: convData.id, user_id: userId },
-              { conversation_id: convData.id, user_id: targetUserId },
-            ]);
+        if (!convData?.id) {
+          return { success: false, error: "Failed to retrieve conversation ID from database." };
+        }
 
-          if (membersError) {
-            console.error("ChatService.createDirectConversation members error:", membersError);
-          }
+        convId = convData.id;
+
+        // 2d. Enroll BOTH participants in conversation_members
+        const { error: membersError } = await supabase
+          .from("conversation_members")
+          .insert([
+            { conversation_id: convData.id, user_id: userId },
+            { conversation_id: convData.id, user_id: targetUserId },
+          ]);
+
+        if (membersError) {
+          console.error("ChatService.createDirectConversation members insert error:", membersError);
+          return { success: false, error: "Failed to enroll conversation members in database." };
         }
       } catch (err) {
         console.error("ChatService.createDirectConversation exception:", err);
+        return { success: false, error: "Network error creating conversation." };
       }
     }
 
@@ -522,7 +611,7 @@ export class ChatService {
       unreadCount: 0,
     };
 
-    // 2. Local Storage persistence
+    // 3. Local Storage cache update
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(LOCAL_CONVERSATIONS_KEY);
@@ -591,7 +680,10 @@ export class ChatService {
 
         if (convError) {
           console.error("ChatService.createGroupConversation insert error:", convError);
-        } else if (convData?.id) {
+          return { success: false, error: "Failed to create group in database." };
+        }
+
+        if (convData?.id) {
           convId = convData.id;
           newGroup.id = convData.id;
           newGroup.createdAt = convData.created_at || newGroup.createdAt;
@@ -609,10 +701,12 @@ export class ChatService {
 
           if (membersError) {
             console.error("ChatService.createGroupConversation members error:", membersError);
+            return { success: false, error: "Failed to enroll group members in database." };
           }
         }
       } catch (err) {
         console.error("ChatService.createGroupConversation exception:", err);
+        return { success: false, error: "Network error creating group conversation." };
       }
     }
 
