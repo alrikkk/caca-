@@ -6,6 +6,7 @@ import { MOCK_PROJECTS, MOCK_STUDENTS } from "@/lib/mock-data";
 import { ProfileService } from "@/services/profile-service";
 import { StudentProfile } from "@/types/user";
 import { SearchIntentResult } from "@/types/ai";
+import { IntentParser } from "@/matching/intent-parser";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -65,60 +66,53 @@ export default function DiscoverPage() {
 
   // Search real students from Supabase or candidates pool on query change
   useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setSearchIntent(null);
+      if (tab === "students") {
+        ProfileService.getAllCandidates().then((all) => {
+          setDbStudents(all.length > 0 ? all : MOCK_STUDENTS);
+        });
+      }
+      return;
+    }
+
+    saveSearchTerm(q);
+    const parsed = IntentParser.parse(q);
+    const hasIntent =
+      parsed.extractedSkills.length > 0 ||
+      parsed.extractedRoles.length > 0 ||
+      parsed.extractedCategories.length > 0 ||
+      Boolean(parsed.availabilityPreference) ||
+      Boolean(parsed.projectCategory) ||
+      Boolean(parsed.experiencePreference);
+
+    setSearchIntent(hasIntent ? parsed : null);
+
     if (tab === "students") {
       setIsSearchingStudents(true);
       const timer = setTimeout(async () => {
         try {
-          const q = query.trim();
-          if (!q) {
-            const all = await ProfileService.getAllCandidates();
-            setDbStudents(all.length > 0 ? all : MOCK_STUDENTS);
-            setSearchIntent(null);
-            setIsSearchingStudents(false);
-            return;
-          }
-
-          saveSearchTerm(q);
-
-          // If multi-word concept query, parse search intent
-          if (q.split(/\s+/).length > 1) {
-            try {
-              const res = await fetch("/api/ai/search-intent", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query: q }),
-              });
-              if (res.ok) {
-                const intent: SearchIntentResult = await res.json();
-                setSearchIntent(intent);
-              }
-            } catch {
-              setSearchIntent(null);
-            }
-          } else {
-            setSearchIntent(null);
-          }
-
           const results = await ProfileService.searchProfiles(q);
-          setDbStudents(results.length > 0 ? results : MOCK_STUDENTS);
+          setDbStudents(results);
         } catch {
           setDbStudents(MOCK_STUDENTS);
         } finally {
           setIsSearchingStudents(false);
         }
-      }, 200);
+      }, 150);
       return () => clearTimeout(timer);
     }
   }, [query, tab, saveSearchTerm]);
 
-  const matchingProjects = MOCK_PROJECTS.filter(
-    (p) =>
-      p.title.toLowerCase().includes(query.toLowerCase()) ||
-      p.category.toLowerCase().includes(query.toLowerCase()) ||
-      p.requiredSkills.some((s) =>
-        s.skill.name.toLowerCase().includes(query.toLowerCase())
-      )
-  );
+  const matchingProjects = React.useMemo(() => {
+    const q = query.trim();
+    if (!q) return MOCK_PROJECTS;
+    const intent = IntentParser.parse(q);
+    const ranked = IntentParser.rankProjects(MOCK_PROJECTS, intent);
+    const matched = ranked.filter((r) => r.relevanceScore > 0).map((r) => r.project);
+    return matched.length > 0 ? matched : MOCK_PROJECTS;
+  }, [query]);
 
   const categories = [
     { name: "Assistive Tech & Vision", count: 12 },
@@ -253,7 +247,7 @@ export default function DiscoverPage() {
         )}
 
         {/* Structured Intent Signals Banner */}
-        {searchIntent && (searchIntent.extractedSkills.length > 0 || searchIntent.extractedRoles.length > 0) && (
+        {searchIntent && (searchIntent.extractedSkills.length > 0 || searchIntent.extractedRoles.length > 0 || searchIntent.extractedCategories.length > 0 || Boolean(searchIntent.availabilityPreference) || Boolean(searchIntent.projectCategory) || Boolean(searchIntent.experiencePreference)) && (
           <div className="p-2.5 bg-canvas-subtle border-hard text-[11px] font-mono flex flex-wrap items-center gap-2">
             <span className="text-ink-muted uppercase font-bold flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-caca-blue" />
@@ -269,9 +263,24 @@ export default function DiscoverPage() {
                 ROLE: {role}
               </Badge>
             ))}
-            {searchIntent.availabilityPreference?.prefersEvenings && (
+            {searchIntent.extractedCategories.map((cat) => (
+              <Badge key={cat} variant="blue" size="sm">
+                INTEREST: {cat}
+              </Badge>
+            ))}
+            {searchIntent.availabilityPreference?.label && (
               <Badge variant="outline" size="sm">
-                AVAIL: EVENINGS
+                AVAIL: {searchIntent.availabilityPreference.label}
+              </Badge>
+            )}
+            {searchIntent.projectCategory && (
+              <Badge variant="coral" size="sm" className="bg-caca-coral text-white border-hard-sm">
+                CONTEXT: {searchIntent.projectCategory}
+              </Badge>
+            )}
+            {searchIntent.experiencePreference && (
+              <Badge variant="outline" size="sm">
+                LEVEL: {searchIntent.experiencePreference}
               </Badge>
             )}
           </div>

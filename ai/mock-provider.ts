@@ -12,6 +12,7 @@ import { StudentProfile } from '@/types/user';
 import { TeamCompositionResult } from '@/types/matching';
 import { AIProvider } from './provider';
 import { defaultMatchingEngine } from '@/matching/engine';
+import { IntentParser } from '@/matching/intent-parser';
 
 /**
  * Mock AI Provider for deterministic hackathon demos and bulletproof local fallback.
@@ -302,58 +303,7 @@ export class MockAIProvider implements AIProvider {
   }
 
   async parseSearchIntent(rawQuery: string): Promise<SearchIntentResult> {
-    const lower = rawQuery.toLowerCase();
-
-    const knownSkills = [
-      'python', 'react', 'typescript', 'next.js', 'pytorch', 'figma', 'rust',
-      'c++', 'docker', 'postgresql', 'tailwind', 'machine learning', 'ai', 'ux', 'ui'
-    ];
-    const knownRoles = [
-      'designer', 'developer', 'engineer', 'researcher', 'architect', 'lead',
-      'frontend', 'backend', 'fullstack', 'student'
-    ];
-    const knownCategories = [
-      'healthcare', 'health', 'vision', 'assistive', 'accessibility', 'systems', 'edtech',
-      'biotech', 'robotics', 'fintech', 'mobile', 'web', 'cloud', 'iot', 'hackathon', 'hardware'
-    ];
-
-    const extractedSkills = knownSkills.filter((s) => lower.includes(s));
-    const extractedRoles = knownRoles.filter((r) => lower.includes(r));
-    const extractedCategories = knownCategories.filter((c) => lower.includes(c));
-
-    const prefersEvenings = lower.includes('evening') || lower.includes('night');
-    const prefersWeekends = lower.includes('weekend');
-    let minHours: number | undefined = undefined;
-    const hoursMatch = lower.match(/(\d+)\s*(h|hrs|hours)/);
-    if (hoursMatch) {
-      minHours = parseInt(hoursMatch[1], 10);
-    }
-
-    let experiencePreference: string | undefined = undefined;
-    if (lower.includes('student') || lower.includes('beginner') || lower.includes('freshman')) {
-      experiencePreference = 'junior';
-    } else if (lower.includes('senior') || lower.includes('experienced') || lower.includes('grad')) {
-      experiencePreference = 'senior';
-    }
-
-    const keywords = rawQuery
-      .split(/\s+/)
-      .map((w) => w.trim().replace(/[^\w]/g, ''))
-      .filter((w) => w.length > 2);
-
-    return {
-      rawQuery,
-      extractedSkills,
-      extractedRoles,
-      extractedCategories,
-      experiencePreference,
-      availabilityPreference: {
-        minHours,
-        prefersEvenings,
-        prefersWeekends,
-      },
-      keywords,
-    };
+    return IntentParser.parse(rawQuery);
   }
 }
 

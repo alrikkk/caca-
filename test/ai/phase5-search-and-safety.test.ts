@@ -11,33 +11,37 @@ describe("Phase 5 - Smarter Natural Language Search Intent & AI Safety", () => {
   it("extracts structured intent for 'Python developer interested in healthcare'", async () => {
     const intent = await mockAI.parseSearchIntent("Python developer interested in healthcare");
 
-    expect(intent.extractedSkills).toContain("python");
-    expect(intent.extractedRoles).toContain("developer");
-    expect(intent.extractedCategories).toContain("healthcare");
+    expect(intent.extractedSkills).toContain("Python");
+    expect(intent.extractedRoles).toContain("Developer");
+    expect(intent.extractedCategories).toContain("Healthcare");
+    expect(intent.extractedSkills).not.toContain("Healthcare");
   });
 
   it("extracts structured intent for 'React designer available weekends'", async () => {
     const intent = await mockAI.parseSearchIntent("React designer available weekends");
 
-    expect(intent.extractedSkills).toContain("react");
-    expect(intent.extractedRoles).toContain("designer");
+    expect(intent.extractedSkills).toContain("React");
+    expect(intent.extractedRoles).toContain("Designer");
     expect(intent.availabilityPreference?.prefersWeekends).toBe(true);
+    expect(intent.extractedCategories).not.toContain("Weekends");
   });
 
   it("extracts structured intent for 'ML student who likes accessibility'", async () => {
     const intent = await mockAI.parseSearchIntent("ML student who likes accessibility");
 
-    expect(intent.extractedRoles).toContain("student");
-    expect(intent.extractedCategories).toContain("accessibility");
-    expect(intent.experiencePreference).toBe("junior");
+    expect(intent.extractedSkills).toContain("Machine Learning");
+    expect(intent.extractedRoles).toContain("Student");
+    expect(intent.extractedCategories).toContain("Accessibility");
+    expect(intent.experiencePreference).toBeUndefined();
   });
 
   it("extracts structured intent for 'Frontend developer for a hackathon'", async () => {
     const intent = await mockAI.parseSearchIntent("Frontend developer for a hackathon");
 
-    expect(intent.extractedRoles).toContain("frontend");
-    expect(intent.extractedRoles).toContain("developer");
-    expect(intent.extractedCategories).toContain("hackathon");
+    expect(intent.extractedSkills).toContain("Frontend");
+    expect(intent.extractedRoles).toContain("Developer");
+    expect(intent.projectCategory).toBe("Hackathon");
+    expect(intent.extractedSkills).not.toContain("Hackathon");
   });
 
   it("guarantees zero private credential exposure in AISanitizer", () => {

@@ -80,9 +80,9 @@ describe("AI Provider & Privacy Safety Layer", () => {
     const mockAI = new MockAIProvider();
     const intent = await mockAI.parseSearchIntent("Python developer interested in healthcare available evenings");
 
-    expect(intent.extractedSkills).toContain("python");
-    expect(intent.extractedRoles).toContain("developer");
-    expect(intent.extractedCategories).toContain("healthcare");
+    expect(intent.extractedSkills).toContain("Python");
+    expect(intent.extractedRoles).toContain("Developer");
+    expect(intent.extractedCategories).toContain("Healthcare");
     expect(intent.availabilityPreference?.prefersEvenings).toBe(true);
   });
 

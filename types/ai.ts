@@ -124,12 +124,14 @@ export interface SearchIntentResult {
   rawQuery: string;
   extractedSkills: string[];
   extractedRoles: string[];
-  extractedCategories: string[];
+  extractedCategories: string[]; // Domains / Interests (e.g. Healthcare, Robotics, Accessibility)
+  projectCategory?: string; // Project Context (e.g. Hackathon, Startup, Research)
   experiencePreference?: string;
   availabilityPreference?: {
     minHours?: number;
     prefersEvenings?: boolean;
     prefersWeekends?: boolean;
+    label?: string;
   };
   keywords: string[];
 }

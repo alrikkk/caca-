@@ -74,19 +74,20 @@ describe("Phase 4 - AI Architecture, Privacy Sanitizer & Fallback Safety", () =>
 
     // Test case 1: Skill + Domain
     const query1 = await provider.parseSearchIntent("Python developer interested in healthcare");
-    expect(query1.extractedSkills).toContain("python");
-    expect(query1.extractedRoles).toContain("developer");
-    expect(query1.extractedCategories).toContain("healthcare");
+    expect(query1.extractedSkills).toContain("Python");
+    expect(query1.extractedRoles).toContain("Developer");
+    expect(query1.extractedCategories).toContain("Healthcare");
 
     // Test case 2: Role + Schedule
     const query2 = await provider.parseSearchIntent("frontend student available evenings");
-    expect(query2.extractedRoles).toContain("student");
+    expect(query2.extractedSkills).toContain("Frontend");
+    expect(query2.extractedRoles).toContain("Student");
     expect(query2.availabilityPreference?.prefersEvenings).toBe(true);
 
     // Test case 3: Skill + Role
     const query3 = await provider.parseSearchIntent("designer who knows React");
-    expect(query3.extractedSkills).toContain("react");
-    expect(query3.extractedRoles).toContain("designer");
+    expect(query3.extractedSkills).toContain("React");
+    expect(query3.extractedRoles).toContain("Designer");
   });
 
   it("falls back reliably to deterministic matching when server AI has no live key", async () => {

@@ -1,6 +1,7 @@
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { StudentProfile, UserSkill, Availability, WorkingStyle, ExperienceLevel, TimeWindow, Interest } from "@/types/user";
 import { CURRENT_USER, MOCK_STUDENTS } from "@/lib/mock-data";
+import { IntentParser } from "@/matching/intent-parser";
 
 const LOCAL_STORAGE_PROFILE_KEY = "caca_active_profile";
 const LOCAL_STORAGE_DEMO_KEY = "caca_is_demo_mode";
@@ -428,11 +429,13 @@ export class ProfileService {
   }
 
   /**
-   * Search real student profiles with strict privacy protection across names, colleges, majors, skills, and tags
+   * Search real student profiles with strict privacy protection and deterministic intent-driven ranking
    */
   static async searchProfiles(query: string): Promise<StudentProfile[]> {
     const q = query.trim();
     if (!q) return [];
+
+    const intent = IntentParser.parse(q);
 
     let isDemo = false;
     if (typeof window !== "undefined") {
@@ -441,16 +444,11 @@ export class ProfileService {
         document.cookie.includes("caca_demo_mode=true");
     }
 
-    if (isDemo) {
-      const lower = q.toLowerCase();
-      return MOCK_STUDENTS.filter(
-        (s) =>
-          s.fullName.toLowerCase().includes(lower) ||
-          s.college.toLowerCase().includes(lower) ||
-          s.major.toLowerCase().includes(lower) ||
-          s.skills.some((sk) => sk.name.toLowerCase().includes(lower)) ||
-          (s.openTo || []).some((tag) => tag.toLowerCase().includes(lower))
-      ).map((s) => ({
+    if (isDemo || !isSupabaseConfigured()) {
+      const ranked = IntentParser.rankCandidates(MOCK_STUDENTS, intent);
+      const matched = ranked.filter((r) => r.relevanceScore > 0).map((r) => r.candidate);
+      const results = matched.length > 0 ? matched : MOCK_STUDENTS;
+      return results.map((s) => ({
         ...s,
         email: "",
         phoneNumber: undefined,
@@ -459,109 +457,22 @@ export class ProfileService {
 
     if (isSupabaseConfigured()) {
       try {
-        const supabase = createClient();
-
-        const { data: matchingSkills } = await supabase
-          .from("skills")
-          .select("id")
-          .ilike("name", `%${q}%`);
-
-        const skillIds = (matchingSkills || []).map((s) => s.id);
-
-        let userIdsFromSkills: string[] = [];
-        if (skillIds.length > 0) {
-          const { data: userSkillRows } = await supabase
-            .from("user_skills")
-            .select("user_id")
-            .in("skill_id", skillIds);
-          userIdsFromSkills = (userSkillRows || []).map((r) => r.user_id);
-        }
-
-        let queryBuilder = supabase
-          .from("profiles")
-          .select(`
-            id,
-            full_name,
-            headline,
-            college,
-            major,
-            grad_year,
-            experience_level,
-            working_style,
-            bio,
-            avatar_url,
-            linkedin_url,
-            github_url,
-            portfolio_url,
-            open_to,
-            availability_status,
-            user_skills (
-              proficiency,
-              skills ( name )
-            )
-          `);
-
-        if (userIdsFromSkills.length > 0) {
-          queryBuilder = queryBuilder.or(
-            `full_name.ilike.%${q}%,college.ilike.%${q}%,major.ilike.%${q}%,id.in.(${userIdsFromSkills.join(",")})`
-          );
-        } else {
-          queryBuilder = queryBuilder.or(
-            `full_name.ilike.%${q}%,college.ilike.%${q}%,major.ilike.%${q}%`
-          );
-        }
-
-        const { data, error } = await queryBuilder.limit(20);
-
-        if (!error && data && data.length > 0) {
-          const typedData = data as unknown as SearchProfileJoinRow[];
-          return typedData.map((p) => ({
-            id: p.id,
-            email: "",
-            fullName: p.full_name,
-            headline: p.headline || undefined,
-            college: p.college,
-            major: p.major,
-            gradYear: p.grad_year,
-            experienceLevel: p.experience_level,
-            workingStyle: (p.working_style as StudentProfile["workingStyle"]) || "collaborative",
-            bio: p.bio || undefined,
-            avatarUrl: p.avatar_url || undefined,
-            linkedinUrl: p.linkedin_url || undefined,
-            githubUrl: p.github_url || undefined,
-            portfolioUrl: p.portfolio_url || undefined,
-            openTo: p.open_to || ["HACKATHONS", "STARTUPS"],
-            availabilityStatus: (p.availability_status as StudentProfile["availabilityStatus"]) || "AVAILABLE",
-            skills: (p.user_skills || []).map((us) => ({
-              id: `sk_${Math.random().toString(36).substring(2, 8)}`,
-              name: us.skills?.name || "Skill",
-              category: "general",
-              proficiency: us.proficiency,
-              yearsExperience: 1,
-            })),
-            interests: [],
-            availability: {
-              hoursPerWeek: 10,
-              timezone: "UTC",
-              prefersRemote: true,
-              weekendAvailability: true,
-              weekdayEvenings: true,
-            },
-          }));
+        const allCandidates = await this.getAllCandidates();
+        if (allCandidates.length > 0) {
+          const ranked = IntentParser.rankCandidates(allCandidates, intent);
+          const matched = ranked.filter((r) => r.relevanceScore > 0).map((r) => r.candidate);
+          if (matched.length > 0) {
+            return matched.map((s) => ({ ...s, email: "", phoneNumber: undefined }));
+          }
         }
       } catch (err) {
         console.error("searchProfiles database error:", err);
       }
     }
 
-    const lower = q.toLowerCase();
-    return MOCK_STUDENTS.filter(
-      (s) =>
-        s.fullName.toLowerCase().includes(lower) ||
-        s.college.toLowerCase().includes(lower) ||
-        s.major.toLowerCase().includes(lower) ||
-        s.skills.some((sk) => sk.name.toLowerCase().includes(lower))
-    ).map((s) => ({
+    const fallbackRanked = IntentParser.rankCandidates(MOCK_STUDENTS, intent);
+    const fallbackMatched = fallbackRanked.filter((r) => r.relevanceScore > 0).map((r) => r.candidate);
+    return (fallbackMatched.length > 0 ? fallbackMatched : MOCK_STUDENTS).map((s) => ({
       ...s,
       email: "",
       phoneNumber: undefined,
