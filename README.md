@@ -47,9 +47,6 @@ AI is used around this system for things like understanding natural-language que
 - Gemini / OpenAI through a server-side AI provider layer
 - Vitest for testing
 
-## Running locally
+##This is still a test project so i will be accepting forks to the code. 
 
-Clone the repository and install the dependencies:
 
-```bash
-npm install
