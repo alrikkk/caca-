@@ -44,8 +44,8 @@ describe("UnifiedAuthPage Component (Login & Signup Flow)", () => {
       screen.getByRole("button", { name: /CONTINUE/i })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /TRY DEMO MODE/i })
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /TRY DEMO MODE/i })
+    ).not.toBeInTheDocument();
   });
 
   it("displays error message when signUp resolves with an error after submitting", async () => {

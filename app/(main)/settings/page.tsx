@@ -231,7 +231,7 @@ export default function SettingsPage() {
           {isDemoMode && <Badge variant="lime" size="sm">DEMO USER</Badge>}
         </div>
         <p className="font-bold uppercase text-ink">
-          {profile?.fullName || "Guest User"} ({profile?.major || "Student"} @ {profile?.college || "University"})
+          {profile?.fullName || "Student"} ({profile?.major || "Student"} @ {profile?.college || "University"})
         </p>
       </div>
     </div>

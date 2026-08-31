@@ -25,7 +25,7 @@ export const Navbar: React.FC = () => {
     ? profile?.fullName || user.email?.split("@")[0] || "Student"
     : isLoading
     ? "..."
-    : "Guest";
+    : "Student";
 
   return (
     <header className="sticky top-0 z-40 w-full bg-white border-b-2 border-ink h-16 flex items-center justify-between px-3 sm:px-6 gap-3">

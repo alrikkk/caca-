@@ -8,7 +8,7 @@ import { Login3DBackground } from "@/components/auth/Login3DBackground";
 import { UserPlus, ArrowRight } from "lucide-react";
 
 export default function UnifiedAuthPage() {
-  const { signIn, signUp, enterDemoMode } = useAuth();
+  const { signIn, signUp } = useAuth();
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -94,11 +94,6 @@ export default function UnifiedAuthPage() {
     }
   };
 
-  const handleDemo = () => {
-    enterDemoMode();
-    window.location.href = "/feed";
-  };
-
   return (
     <div className="relative min-h-screen bg-canvas bg-grid-subtle flex flex-col justify-center items-center p-4 overflow-hidden">
       <Login3DBackground />
@@ -111,22 +106,6 @@ export default function UnifiedAuthPage() {
           <p className="text-[11px] font-mono font-bold uppercase text-ink mt-1.5">
             {isSignUp ? "CREATE NEW STUDENT ACCOUNT" : "SIGN IN TO YOUR SQUAD"}
           </p>
-        </div>
-
-        {/* Demo Mode Button for Evaluators */}
-        <div className="border-hard p-2.5 bg-canvas-subtle space-y-1.5">
-          <p className="text-[9px] font-mono font-bold uppercase text-ink-muted">
-            HACKATHON EVALUATOR / GUEST
-          </p>
-          <Button
-            type="button"
-            variant="accent"
-            size="sm"
-            onClick={handleDemo}
-            className="w-full text-xs h-8"
-          >
-            <span>TRY DEMO MODE (ALEX CHEN)</span>
-          </Button>
         </div>
 
         {/* Unified Auth Form */}
