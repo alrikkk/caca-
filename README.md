@@ -2,7 +2,7 @@
 
 Caca is a student-focused platform for finding people to build projects with.
 
-BUILT FOR SRM FAST PROMPTWARS 2026 , #ONE TOP 10
+BUILT FOR SRM FAST PROMPTWARS 2026 , #ONE OF TOP 10
 
 The idea came from a pretty simple problem: during hackathons, college projects, and startup competitions, finding the right teammates can be harder than coming up with the idea itself. Caca tries to make that process easier by helping students discover projects, find suitable teammates, and actually collaborate after matching.
 
