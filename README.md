@@ -58,5 +58,6 @@ AI is used around this system for things like understanding natural-language que
 
 <img width="1512" height="829" alt="Screenshot 2026-11-21 at 3 33 45 PM" src="https://github.com/user-attachments/assets/b87f389c-5036-474c-b59e-36dde69e8254" />
 
+<img width="1497" height="824" alt="Screenshot 2026-11-21 at 3 45 19 PM" src="https://github.com/user-attachments/assets/d9ce0605-de08-4694-87da-dc67790780fe" />
 
-
+<img width="1498" height="830" alt="Screenshot 2026-11-21 at 3 45 51 PM" src="https://github.com/user-attachments/assets/00215656-8482-40d8-8d80-f5658c991d89" />
