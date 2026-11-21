@@ -1,3 +1,6 @@
+<img width="97" height="48" alt="Screenshot 2026-11-21 at 3 32 51 PM" src="https://github.com/user-attachments/assets/88ca1ac4-6246-40dc-911d-04c6737eaf56" />
+
+
 # Caca
 
 Caca is a student-focused platform for finding people to build projects with.
@@ -49,6 +52,11 @@ AI is used around this system for things like understanding natural-language que
 - Gemini / OpenAI through a server-side AI provider layer
 - Vitest for testing
 
-## *This is still a test project so i will be accepting forks to the code and suggestions.
+## *This is still a test / example project for the hackathon project.
+
+## Preview 
+
+<img width="1512" height="829" alt="Screenshot 2026-11-21 at 3 33 45 PM" src="https://github.com/user-attachments/assets/b87f389c-5036-474c-b59e-36dde69e8254" />
+
 
 
