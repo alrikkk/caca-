@@ -52,7 +52,7 @@ AI is used around this system for things like understanding natural-language que
 - Gemini / OpenAI through a server-side AI provider layer
 - Vitest for testing
 
-## *This is still a test / example project for the hackathon project.
+## *This was a test / example project for the hackathon.
 
 ## Preview 
 
